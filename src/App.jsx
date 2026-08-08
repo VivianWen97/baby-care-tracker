@@ -1,0 +1,262 @@
+import React, { useState, useEffect } from 'react';
+import { Timer, Baby, Heart, History, Trash2, Play, Square, Plus } from 'lucide-react';
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('contraction'); // contraction | feeding | diaper | history
+  const [logs, setLogs] = useState(() => {
+    const saved = localStorage.getItem('care_logs');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // 保存数据到 LocalStorage
+  useEffect(() => {
+    localStorage.setItem('care_logs', JSON.stringify(logs));
+  }, [logs]);
+
+  // 1. 宫缩计时器状态
+  const [isTiming, setIsTiming] = useState(false);
+  const [startTime, setStartTime] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    let interval = null;
+    if (isTiming) {
+      interval = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isTiming, startTime]);
+
+  const toggleContraction = () => {
+    if (!isTiming) {
+      setIsTiming(true);
+      setStartTime(Date.now());
+      setElapsed(0);
+    } else {
+      setIsTiming(false);
+      const newLog = {
+        id: Date.now(),
+        type: 'contraction',
+        timestamp: new Date(startTime).toLocaleString('zh-CN'),
+        duration: elapsed, // 持续秒数
+      };
+      setLogs([newLog, ...logs]);
+    }
+  };
+
+  // 2. 喂奶记录状态
+  const [feedType, setFeedType] = useState('breast_left'); // breast_left | breast_right | bottle
+  const [feedAmount, setFeedAmount] = useState('');
+
+  const addFeedingLog = () => {
+    if (feedType === 'bottle' && !feedAmount) return alert('请输入喂奶毫升数');
+    const newLog = {
+      id: Date.now(),
+      type: 'feeding',
+      detail: feedType === 'bottle' ? `瓶喂 ${feedAmount} ml` : `亲喂 (${feedType === 'breast_left' ? '左侧' : '右侧'})`,
+      timestamp: new Date().toLocaleString('zh-CN'),
+    };
+    setLogs([newLog, ...logs]);
+    setFeedAmount('');
+    alert('已记录喂奶！');
+  };
+
+  // 3. 排便记录状态
+  const [diaperType, setDiaperType] = useState('pee'); // pee | poo | both
+  const [diaperNote, setDiaperNote] = useState('');
+
+  const addDiaperLog = () => {
+    const labels = { pee: '小便', poo: '大便', both: '小便+大便' };
+    const newLog = {
+      id: Date.now(),
+      type: 'diaper',
+      detail: labels[diaperType] + (diaperNote ? ` (${diaperNote})` : ''),
+      timestamp: new Date().toLocaleString('zh-CN'),
+    };
+    setLogs([newLog, ...logs]);
+    setDiaperNote('');
+    alert('已记录换尿裤！');
+  };
+
+  const deleteLog = (id) => {
+    setLogs(logs.filter((log) => log.id !== id));
+  };
+
+  return (
+    <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col font-sans">
+      {/* 顶部标题 */}
+      <header className="bg-indigo-600 text-white p-4 text-center font-bold text-lg shadow-md">
+        母婴与待产实时记录器
+      </header>
+
+      {/* 主体内容区 */}
+      <main className="flex-1 p-4 pb-20">
+        {activeTab === 'contraction' && (
+          <div className="flex flex-col items-center justify-center space-y-6 pt-8">
+            <div className="text-center">
+              <h2 className="text-slate-500 font-medium">宫缩计时</h2>
+              <div className="text-6xl font-mono font-bold my-4 text-indigo-600">
+                {Math.floor(elapsed / 60).toString().padStart(2, '0')}:
+                {(elapsed % 60).toString().padStart(2, '0')}
+              </div>
+            </div>
+
+            <button
+              onClick={toggleContraction}
+              className={`w-40 h-40 rounded-full flex flex-col items-center justify-center text-white text-xl font-bold shadow-lg transition-transform active:scale-95 ${
+                isTiming ? 'bg-rose-500 hover:bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
+            >
+              {isTiming ? <Square size={36} className="mb-2" /> : <Play size={36} className="mb-2 ml-1" />}
+              {isTiming ? '停止宫缩' : '开始宫缩'}
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'feeding' && (
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+            <h2 className="text-lg font-bold text-slate-800 mb-2">喂奶记录</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'breast_left', label: '亲喂 (左)' },
+                { id: 'breast_right', label: '亲喂 (右)' },
+                { id: 'bottle', label: '配方奶/瓶喂' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setFeedType(item.id)}
+                  className={`p-3 text-sm rounded-xl border text-center transition-all ${
+                    feedType === item.id
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-600 font-bold'
+                      : 'border-slate-200 text-slate-600'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {feedType === 'bottle' && (
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">喂奶量 (ml)</label>
+                <input
+                  type="number"
+                  placeholder="例如: 60"
+                  value={feedAmount}
+                  onChange={(e) => setFeedAmount(e.target.value)}
+                  className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-600"
+                />
+              </div>
+            )}
+
+            <button
+              onClick={addFeedingLog}
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+            >
+              <Plus size={18} /> 保存喂奶记录
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'diaper' && (
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+            <h2 className="text-lg font-bold text-slate-800 mb-2">换尿裤/排便记录</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'pee', label: '💧 小便' },
+                { id: 'poo', label: '💩 大便' },
+                { id: 'both', label: '✨ 混合' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setDiaperType(item.id)}
+                  className={`p-3 text-sm rounded-xl border text-center transition-all ${
+                    diaperType === item.id
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-600 font-bold'
+                      : 'border-slate-200 text-slate-600'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">备注 (颜色/形状/异常情况)</label>
+              <input
+                type="text"
+                placeholder="例如：黄色糊状"
+                value={diaperNote}
+                onChange={(e) => setDiaperNote(e.target.value)}
+                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-600"
+              />
+            </div>
+
+            <button
+              onClick={addDiaperLog}
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+            >
+              <Plus size={18} /> 保存排便记录
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div className="space-y-3">
+            <h2 className="text-lg font-bold text-slate-800 mb-2">历史记录 ({logs.length})</h2>
+            {logs.length === 0 ? (
+              <p className="text-center text-slate-400 py-8">暂无记录</p>
+            ) : (
+              logs.map((log) => (
+                <div
+                  key={log.id}
+                  className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-center"
+                >
+                  <div>
+                    <div className="font-bold text-slate-800 text-sm">
+                      {log.type === 'contraction' && `⚡ 宫缩持续 ${log.duration} 秒`}
+                      {log.type === 'feeding' && `🍼 ${log.detail}`}
+                      {log.type === 'diaper' && `🪰 ${log.detail}`}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">{log.timestamp}</div>
+                  </div>
+                  <button onClick={() => deleteLog(log.id)} className="text-slate-300 hover:text-rose-500 p-1">
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* 底部导航栏 */}
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 flex justify-around p-2">
+        {[
+          { id: 'contraction', label: '宫缩', icon: Timer },
+          { id: 'feeding', label: '喂奶', icon: Baby },
+          { id: 'diaper', label: '排便', icon: Heart },
+          { id: 'history', label: '历史', icon: History },
+        ].map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`flex flex-col items-center py-1 px-3 rounded-lg ${
+                isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
+              }`}
+            >
+              <Icon size={20} />
+              <span className="text-xs mt-1">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
