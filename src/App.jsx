@@ -116,7 +116,7 @@ export default function App() {
         {activeTab === 'feeding' && (
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
             <h2 className="text-lg font-bold text-slate-800 mb-2">喂奶记录</h2>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {[
                 { id: 'breast_left', label: '亲喂 (左)' },
                 { id: 'breast_right', label: '亲喂 (右)' },
