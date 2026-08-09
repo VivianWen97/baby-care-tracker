@@ -86,8 +86,8 @@ export default function App() {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col font-sans">
-      <header className="bg-indigo-600 text-white p-4 text-center font-bold text-lg shadow-md">
-        母婴与待产实时记录器
+      <header className="bg-green-300 text-white p-4 text-center font-bold text-lg shadow-md">
+        🦖小恐龙破壳日记录&新生护理助手🦖
       </header>
 
       <main className="flex-1 p-4 pb-20">
@@ -95,7 +95,7 @@ export default function App() {
           <div className="flex flex-col items-center justify-center space-y-6 pt-8">
             <div className="text-center">
               <h2 className="text-slate-500 font-medium">宫缩计时</h2>
-              <div className="text-6xl font-mono font-bold my-4 text-indigo-600">
+              <div className="text-6xl font-mono font-bold my-4 text-green-300">
                 {Math.floor(elapsed / 60).toString().padStart(2, '0')}:
                 {(elapsed % 60).toString().padStart(2, '0')}
               </div>
@@ -104,7 +104,7 @@ export default function App() {
             <button
               onClick={toggleContraction}
               className={`w-40 h-40 rounded-full flex flex-col items-center justify-center text-white text-xl font-bold shadow-lg transition-transform active:scale-95 ${
-                isTiming ? 'bg-rose-500 hover:bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700'
+                isTiming ? 'bg-rose-500 hover:bg-rose-600' : 'bg-green-300 hover:bg-green-700'
               }`}
             >
               {isTiming ? <Square size={36} className="mb-2" /> : <Play size={36} className="mb-2 ml-1" />}
@@ -120,14 +120,15 @@ export default function App() {
               {[
                 { id: 'breast_left', label: '亲喂 (左)' },
                 { id: 'breast_right', label: '亲喂 (右)' },
-                { id: 'bottle', label: '配方奶/瓶喂' },
+                { id: 'pump_bottle', label: '母乳瓶喂' },
+                { id: 'formula_bottle', label: '配方奶/水奶' },
               ].map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setFeedType(item.id)}
                   className={`p-3 text-sm rounded-xl border text-center transition-all ${
                     feedType === item.id
-                      ? 'border-indigo-600 bg-indigo-50 text-indigo-600 font-bold'
+                      ? 'border-green-300 bg-green-50 text-green-300 font-bold'
                       : 'border-slate-200 text-slate-600'
                   }`}
                 >
@@ -136,22 +137,51 @@ export default function App() {
               ))}
             </div>
 
-            {feedType === 'bottle' && (
+            {(feedType === 'formula_bottle' || feedType === 'pump_bottle') && (
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">喂奶量 (ml)</label>
+
                 <input
-                  type="number"
-                  placeholder="例如: 60"
+                  id="steps-range"
+                  type="range"
+                  min="0"
+                  max="150"
                   value={feedAmount}
                   onChange={(e) => setFeedAmount(e.target.value)}
-                  className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-600"
+                  step="10"
+                  className="w-full h-2 bg-green-100 rounded-lg appearance-none cursor-pointer"
                 />
+
+                <div className="flex justify-between px-2.5 mt-2 text-xs">
+                  <span>|</span>
+                  <span>|</span>
+                  <span>|</span>
+                  <span>|</span>
+                  <span>|</span>
+                  <span>|</span>
+                </div>
+                <div className="flex justify-between px-2.5 mt-2 text-xs">
+                  <span>0</span>
+                  <span>30</span>
+                  <span>60</span>
+                  <span>90</span>
+                  <span>120</span>
+                  <span>150</span>
+                </div>
+                <div className="flex items-center gap-2 mb-3 text-xs">
+                  <input
+                    type="text"
+                    value={feedAmount || '0'}
+                    className="w-12 p-2 border border-slate-200 rounded-xl bg-slate-20 text-center text-xs"
+                  />
+                  <span className="text-slate-300">毫升</span>
+                </div>
               </div>
             )}
 
             <button
               onClick={addFeedingLog}
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+              className="w-full py-3 bg-green-300 text-white rounded-xl font-bold flex items-center justify-center gap-2"
             >
               <Plus size={18} /> 保存喂奶记录
             </button>
@@ -172,7 +202,7 @@ export default function App() {
                   onClick={() => setDiaperType(item.id)}
                   className={`p-3 text-sm rounded-xl border text-center transition-all ${
                     diaperType === item.id
-                      ? 'border-indigo-600 bg-indigo-50 text-indigo-600 font-bold'
+                      ? 'border-green-300 bg-green-50 text-green-300 font-bold'
                       : 'border-slate-200 text-slate-600'
                   }`}
                 >
@@ -188,13 +218,13 @@ export default function App() {
                 placeholder="例如：黄色糊状"
                 value={diaperNote}
                 onChange={(e) => setDiaperNote(e.target.value)}
-                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-600"
+                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300"
               />
             </div>
 
             <button
               onClick={addDiaperLog}
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+              className="w-full py-3 bg-green-300 text-white rounded-xl font-bold flex items-center justify-center gap-2"
             >
               <Plus size={18} /> 保存排便记录
             </button>
@@ -244,7 +274,7 @@ export default function App() {
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={`flex flex-col items-center py-1 px-3 rounded-lg ${
-                isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                isActive ? 'text-green-300 font-bold' : 'text-slate-400'
               }`}
             >
               <Icon size={20} />
