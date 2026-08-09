@@ -2,18 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Timer, Baby, Heart, History, Trash2, Play, Square, Plus } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('contraction'); // contraction | feeding | diaper | history
+  const [activeTab, setActiveTab] = useState('contraction');
   const [logs, setLogs] = useState(() => {
     const saved = localStorage.getItem('care_logs');
     return saved ? JSON.parse(saved) : [];
   });
 
-  // 保存数据到 LocalStorage
   useEffect(() => {
     localStorage.setItem('care_logs', JSON.stringify(logs));
   }, [logs]);
 
-  // 1. 宫缩计时器状态
+  // Contraction Timer
   const [isTiming, setIsTiming] = useState(false);
   const [startTime, setStartTime] = useState(null);
   const [elapsed, setElapsed] = useState(0);
@@ -41,14 +40,14 @@ export default function App() {
         id: Date.now(),
         type: 'contraction',
         timestamp: new Date(startTime).toLocaleString('zh-CN'),
-        duration: elapsed, // 持续秒数
+        duration: elapsed,
       };
       setLogs([newLog, ...logs]);
     }
   };
 
-  // 2. 喂奶记录状态
-  const [feedType, setFeedType] = useState('breast_left'); // breast_left | breast_right | bottle
+  // Feeding Tracker
+  const [feedType, setFeedType] = useState('breast_left');
   const [feedAmount, setFeedAmount] = useState('');
 
   const addFeedingLog = () => {
@@ -64,8 +63,8 @@ export default function App() {
     alert('已记录喂奶！');
   };
 
-  // 3. 排便记录状态
-  const [diaperType, setDiaperType] = useState('pee'); // pee | poo | both
+  // Diaper Tracker
+  const [diaperType, setDiaperType] = useState('pee');
   const [diaperNote, setDiaperNote] = useState('');
 
   const addDiaperLog = () => {
@@ -87,12 +86,10 @@ export default function App() {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* 顶部标题 */}
       <header className="bg-indigo-600 text-white p-4 text-center font-bold text-lg shadow-md">
         母婴与待产实时记录器
       </header>
 
-      {/* 主体内容区 */}
       <main className="flex-1 p-4 pb-20">
         {activeTab === 'contraction' && (
           <div className="flex flex-col items-center justify-center space-y-6 pt-8">
@@ -233,7 +230,6 @@ export default function App() {
         )}
       </main>
 
-      {/* 底部导航栏 */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 flex justify-around p-2">
         {[
           { id: 'contraction', label: '宫缩', icon: Timer },
