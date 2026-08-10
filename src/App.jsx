@@ -116,7 +116,7 @@ export default function App() {
       },
       yaxis: {
         min: 0,
-        max: 3,
+        max: 10,
         labels: {
           show: false,
         },
