@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ApexCharts from 'apexcharts';
 import { Timer, Baby, Heart, History, Trash2, Play, Square, Plus } from 'lucide-react';
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
   const [isTiming, setIsTiming] = useState(false);
   const [startTime, setStartTime] = useState(null);
   const [elapsed, setElapsed] = useState(0);
+  const chartRef = useRef(null);
 
   useEffect(() => {
     let interval = null;
@@ -36,15 +38,115 @@ export default function App() {
       setElapsed(0);
     } else {
       setIsTiming(false);
+      const startedAt = new Date(startTime);
+      const endedAt = new Date(startTime + elapsed * 1000);
       const newLog = {
         id: Date.now(),
         type: 'contraction',
-        timestamp: new Date(startTime).toLocaleString('zh-CN'),
+        timestamp: startedAt.toLocaleString('en-US', {timeZone: 'America/New_York'}),
+        startTime: startedAt.toISOString(),
+        endTime: endedAt.toISOString(),
         duration: elapsed,
       };
       setLogs([newLog, ...logs]);
     }
   };
+
+  const contractionSeries = useMemo(() => {
+    return logs
+      .filter((log) => log.type === 'contraction' && log.startTime && log.endTime)
+      .map((log, index) => {
+        const start = new Date(log.startTime).getTime();
+        const end = new Date(log.endTime).getTime();
+        const midpoint = start + (end - start) / 2;
+
+        return {
+          name: `宫缩 ${index + 1}`,
+          data: [
+            { x: start, y: 0 },
+            { x: midpoint, y: 3 },
+            { x: end, y: 0 },
+          ],
+        };
+      });
+  }, [logs]);
+
+  useEffect(() => {
+    if (activeTab !== 'contraction' || !chartRef.current) return;
+
+    const computedStyle = getComputedStyle(document.documentElement);
+    const brandColor = computedStyle.getPropertyValue('--color-fg-brand').trim() || '#4bce97';
+
+    const options = {
+      chart: {
+        height: '260px',
+        width: '100%',
+        type: 'line',
+        fontFamily: 'Inter, sans-serif',
+        toolbar: {
+          show: false,
+        },
+      },
+      series: contractionSeries.map((series) => ({
+        ...series,
+        color: brandColor,
+      })),
+      stroke: {
+        curve: 'smooth',
+        width: 3,
+      },
+      grid: {
+        show: true,
+        strokeDashArray: 4,
+        padding: {
+          left: 2,
+          right: 2,
+          top: -10,
+        },
+      },
+      xaxis: {
+        type: 'datetime',
+        labels: {
+          show: true,
+          datetimeUTC: false,
+          style: {
+            fontFamily: 'Inter, sans-serif',
+          },
+        },
+      },
+      yaxis: {
+        min: 0,
+        max: 10,
+        labels: {
+          show: false,
+        },
+        axisBorder: {
+          show: false,
+        },
+        axisTicks: {
+          show: false,
+        },
+      },
+      legend: {
+        show: false,
+      },
+      dataLabels: {
+        enabled: false,
+      },
+      tooltip: {
+        x: {
+          format: 'yyyy-MM-dd HH:mm:ss',
+        },
+      },
+    };
+
+    const chart = new ApexCharts(chartRef.current, options);
+    chart.render();
+
+    return () => {
+      chart.destroy();
+    };
+  }, [activeTab, contractionSeries]);
 
   // Feeding Tracker
   const [feedType, setFeedType] = useState('breast_left');
@@ -56,7 +158,7 @@ export default function App() {
       id: Date.now(),
       type: 'feeding',
       detail: feedType === 'bottle' ? `瓶喂 ${feedAmount} ml` : `亲喂 (${feedType === 'breast_left' ? '左侧' : '右侧'})`,
-      timestamp: new Date().toLocaleString('zh-CN'),
+      timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
     };
     setLogs([newLog, ...logs]);
     setFeedAmount('');
@@ -73,7 +175,7 @@ export default function App() {
       id: Date.now(),
       type: 'diaper',
       detail: labels[diaperType] + (diaperNote ? ` (${diaperNote})` : ''),
-      timestamp: new Date().toLocaleString('zh-CN'),
+      timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
     };
     setLogs([newLog, ...logs]);
     setDiaperNote('');
@@ -110,7 +212,26 @@ export default function App() {
               {isTiming ? <Square size={36} className="mb-2" /> : <Play size={36} className="mb-2 ml-1" />}
               {isTiming ? '停止宫缩' : '开始宫缩'}
             </button>
+            
+            <div className="max-w-sm w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-6">
+              <div className="flex justify-between mb-4 md:mb-6">
+                <div className="grid gap-4 grid-cols-2">
+                  <div>
+                    <h5 className="inline-flex items-center text-slate-600">宫缩趋势</h5>
+                    <p className="text-slate-800 text-xl font-semibold">近7天</p>
+                  </div>
+                </div>
+              </div>
+              {contractionSeries.length === 0 ? (
+                <div className="h-64 flex items-center justify-center text-sm text-slate-400">
+                  还没有宫缩记录，开始计时后会显示在这里。
+                </div>
+              ) : (
+                <div ref={chartRef} className="h-64 w-full" />
+              )}
+            </div>
           </div>
+
         )}
 
         {activeTab === 'feeding' && (
