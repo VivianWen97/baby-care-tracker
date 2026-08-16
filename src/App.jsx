@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
 import { Timer, Baby, Heart, History, Trash2, Play, Square, Plus } from 'lucide-react';
+import analyzeContractions from './lib/contractionStats';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('contraction');
@@ -18,6 +19,7 @@ export default function App() {
   const [startTime, setStartTime] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const chartRef = useRef(null);
+  const [dismissedOutlierKey, setDismissedOutlierKey] = useState(null);
 
   useEffect(() => {
     let interval = null;
@@ -148,6 +150,55 @@ export default function App() {
     };
   }, [activeTab, contractionSeries]);
 
+  // Contraction statistics, stage detection (moved to utility)
+  const contractionStats = useMemo(() => analyzeContractions(logs), [logs]);
+
+  // Alerting: hospital alert for Active stage consistency and epidural tip
+  useEffect(() => {
+    const stat = contractionStats;
+    if (!stat) return;
+
+    const now = Date.now();
+
+    const getLast = (key) => {
+      try {
+        const v = localStorage.getItem(key);
+        return v ? parseInt(v, 10) : 0;
+      } catch (e) {
+        return 0;
+      }
+    };
+    const setLast = (key, ts) => {
+      try {
+        localStorage.setItem(key, String(ts));
+      } catch (e) {}
+    };
+
+    // Active hospital alert: short window criteria
+    const s = stat.shortStats;
+    if (s && s.count >= 3) {
+      const isActiveMean = s.meanDuration && s.meanInterval && s.meanDuration >= 45 && s.meanDuration <= 60 && s.meanInterval >= 180 && s.meanInterval <= 300;
+      const consistent = s.cvIntervals !== null ? s.cvIntervals < 0.35 : true;
+      const lastHosp = getLast('last_hospital_alert') || 0;
+      const hospCooldown = 60 * 60 * 1000; // 1 hour
+      if (isActiveMean && consistent && now - lastHosp > hospCooldown) {
+        alert('宫缩进入活跃期且持续，可能需要前往医院。');
+        setLast('last_hospital_alert', now);
+      }
+    }
+
+    // Epidural tip when approx 4 minutes apart
+    if (s && s.meanInterval && s.meanInterval <= 240 && s.count >= 2) {
+      const lastEpi = getLast('last_epidural_tip') || 0;
+      const epiCooldown = 6 * 60 * 60 * 1000; // 6 hours
+      if (now - lastEpi > epiCooldown) {
+        // show non-blocking tip in UI by storing a flag; also show a quick alert
+        alert('提示：宫缩间隔约4分钟，若需要，可向医护人员咨询硬膜外镇痛（epidural）。');
+        setLast('last_epidural_tip', now);
+      }
+    }
+  }, [contractionStats]);
+
   // Feeding Tracker
   const [feedType, setFeedType] = useState('breast_left');
   const [feedAmount, setFeedAmount] = useState('');
@@ -229,6 +280,67 @@ export default function App() {
               ) : (
                 <div ref={chartRef} className="h-64 w-full" />
               )}
+              {/* Contraction stats card */}
+              <div className="mt-4 border-t pt-4">
+                {contractionStats && (
+                  <div className="text-sm text-slate-700">
+                    {(() => {
+                      const key = contractionStats.outlierHypothesis ? contractionStats.outlierHypothesis + JSON.stringify(contractionStats.outliers) : null;
+                      const show = key && dismissedOutlierKey !== key;
+                      if (!show) return null;
+                      return (
+                        <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex justify-between items-start">
+                          <div>
+                            <div className="font-semibold">数据异常提示</div>
+                            <div className="mt-1">{contractionStats.outlierHypothesis}</div>
+                          </div>
+                          <div className="ml-4 flex-shrink-0">
+                            <button
+                              onClick={() => setDismissedOutlierKey(key)}
+                              className="px-3 py-1 bg-amber-200 rounded text-xs text-amber-900"
+                            >
+                              关闭
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="text-xs text-slate-500">平均持续时间</div>
+                        <div className="text-lg font-semibold">
+                          {contractionStats.mediumStats && contractionStats.mediumStats.meanDuration
+                            ? `${Math.round(contractionStats.mediumStats.meanDuration)} 秒`
+                            : '—'}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-slate-500">平均间隔</div>
+                        <div className="text-lg font-semibold">
+                          {contractionStats.mediumStats && contractionStats.mediumStats.meanInterval
+                            ? `${(contractionStats.mediumStats.meanInterval / 60).toFixed(1)} 分钟`
+                            : '—'}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-slate-500">检测阶段</div>
+                        <div className="text-lg font-semibold">{contractionStats.stage}</div>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-slate-400">最近 6 小时 历史数: {contractionStats.mediumList.length}，最近 1 小时: {contractionStats.shortList.length}</div>
+
+                    {contractionStats.stage === 'Insufficient data' && (
+                      <div className="mt-2 text-xs text-amber-600">数据不足以可靠判断阶段；已计算平均值供参考。</div>
+                    )}
+                    {contractionStats.stage === 'Unclear' && (
+                      <div className="mt-2 text-xs text-slate-500">指标模糊，建议继续记录更多宫缩以提高判定准确性。</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
