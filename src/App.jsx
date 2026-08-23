@@ -5,28 +5,56 @@ import analyzeContractions, { getContractionChartRange } from './lib/contraction
 import { db } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 
+const EMPTY_BIRTH_STATS = {
+  birthDate: '',
+  birthTime: '',
+  weight: '',
+  height: '',
+  mainCondition: '',
+  issues: [],
+  condition: '',
+};
+
+function calculateGestationalAge(dueDate, birthDate) {
+  if (!dueDate || !birthDate) return null;
+
+  const dueDateMs = Date.parse(`${dueDate}T00:00:00Z`);
+  const birthDateMs = Date.parse(`${birthDate}T00:00:00Z`);
+  if (!Number.isFinite(dueDateMs) || !Number.isFinite(birthDateMs)) return null;
+
+  const daysAtBirth = 280 - Math.round((dueDateMs - birthDateMs) / (24 * 60 * 60 * 1000));
+  return {
+    days: daysAtBirth,
+    weeks: Math.floor(daysAtBirth / 7),
+    remainingDays: daysAtBirth % 7,
+    isPreTerm: daysAtBirth < 37 * 7,
+  };
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('contraction');
   const [alertMessage, setAlertMessage] = useState(null);
   const [logs, setLogs] = useState([]);
   const [roomCode, setRoomCode] = useState(() => localStorage.getItem('family_room_code') || '');
   const [inputCode, setInputCode] = useState('');
+  const [dueDate, setDueDate] = useState(() => localStorage.getItem('family_due_date') || '');
   const [roomLoadKey, setRoomLoadKey] = useState(0);
-  const [birthStats, setBirthStats] = useState({
-    birthDate: '',
-    birthTime: '',
-    weight: '',
-    height: '',
-    mainCondition: '',
-    issues: [],
-    condition: '',
-  });
+  const [birthStats, setBirthStats] = useState(EMPTY_BIRTH_STATS);
+  const [birthStatsOpen, setBirthStatsOpen] = useState(false);
 
   // Listen to Firebase updates in real time whenever roomCode changes
   useEffect(() => {
     if (!roomCode) return;
     const roomRef = ref(db, `rooms/${roomCode}/logs`);
+    const dueDateRef = ref(db, `rooms/${roomCode}/dueDate`);
     const birthStatsRef = ref(db, `rooms/${roomCode}/birthStats`);
+    const unsubscribeDueDate = onValue(dueDateRef, (snapshot) => {
+      const data = snapshot.val() || '';
+      setDueDate(data);
+      if (data) localStorage.setItem('family_due_date', data);
+    }, (error) => {
+      console.error('Failed to load due date:', error);
+    });
     const unsubscribeLogs = onValue(roomRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -52,12 +80,13 @@ export default function App() {
         });
         return;
       }
-      setBirthStats({ birthDate: '', birthTime: '', weight: '', height: '', mainCondition: '', issues: [], condition: '' });
+      setBirthStats(EMPTY_BIRTH_STATS);
     }, (error) => {
       console.error('Failed to load birth stats:', error);
     });
     return () => {
       unsubscribeLogs();
+      unsubscribeDueDate();
       unsubscribeBirthStats();
     };
   }, [roomCode, roomLoadKey]);
@@ -87,6 +116,8 @@ export default function App() {
     }
     const normalizedBirthStats = {
       ...birthStats,
+      dueDate,
+      gestationalAge: calculateGestationalAge(dueDate, birthStats.birthDate),
       height: birthStats.height.trim(),
       issues: birthStats.issues,
       condition: birthStats.condition.trim(),
@@ -110,13 +141,20 @@ export default function App() {
 
   // Re-enter or create a family room code
   const joinRoom = () => {
-    const formatted = inputCode.trim().toLowerCase();
+    const formatted = inputCode.trim();
+    const formattedDueDate = dueDate.trim();
     if (!formatted) return alert('请输入家庭暗号/房间号');
+    if (!formattedDueDate) return alert('请输入预产期');
 
     setLogs([]);
     setRoomCode(formatted);
+    setDueDate(formattedDueDate);
     setRoomLoadKey((currentKey) => currentKey + 1);
     localStorage.setItem('family_room_code', formatted);
+    localStorage.setItem('family_due_date', formattedDueDate);
+    set(ref(db, `rooms/${formatted}/dueDate`), formattedDueDate).catch((error) => {
+      console.error('Failed to save due date:', error);
+    });
   };
 
   // Contraction Timer
@@ -409,6 +447,11 @@ export default function App() {
     updateLogs(logs.filter((log) => log.id !== id));
   };
 
+  const gestationalAge = useMemo(
+    () => calculateGestationalAge(dueDate, birthStats.birthDate),
+    [dueDate, birthStats.birthDate],
+  );
+
   // If no family room code is set, ask user to enter one
   if (!roomCode) {
     return (
@@ -426,6 +469,15 @@ export default function App() {
             onChange={(e) => setInputCode(e.target.value)}
             className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-600 text-center text-lg font-bold"
           />
+          <label htmlFor="due-date" className="text-left text-xs text-slate-500 block">请输入预产期</label>
+          <input
+            id="due-date"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+          />
+
           <button
             onClick={joinRoom}
             className="w-full py-3 bg-green-600 text-white rounded-xl font-bold"
@@ -551,13 +603,35 @@ export default function App() {
               </div>
             </div>
 
-            <div className="max-w-sm w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-6">
-              <div className="mb-4">
-                <h2 className="text-lg font-bold text-slate-800">恐龙宝宝诞生❤️欢迎来到这个世界！</h2>
-                <p className="mt-1 text-xs text-slate-500">记录宝宝出生时的准确资料</p>
-              </div>
+            <div className="max-w-sm w-full space-y-2">
+              <button
+                type="button"
+                onClick={() => setBirthStatsOpen((isOpen) => !isOpen)}
+                className={`w-full rounded-2xl border p-4 text-left shadow-sm transition-colors ${
+                  birthStatsOpen
+                    ? 'border-green-300 bg-green-50 text-green-800'
+                    : 'border-slate-200 bg-white text-slate-800'
+                }`}
+                aria-expanded={birthStatsOpen}
+                aria-controls="birth-stats-form"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold tracking-wide text-slate-500">出生信息</div>
+                    <div className="mt-1 text-lg font-bold">恐龙宝宝诞生❤️</div>
+                  </div>
+                  <span className="text-xl" aria-hidden="true">{birthStatsOpen ? '−' : '+'}</span>
+                </div>
+              </button>
 
-              <div className="space-y-4">
+              {birthStatsOpen && (
+                <div id="birth-stats-form" className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-6">
+                <div className="mb-4">
+                  <h2 className="text-lg font-bold text-slate-800">欢迎来到这个世界！</h2>
+                  <p className="mt-1 text-xs text-slate-500">记录宝宝出生时的准确资料</p>
+                </div>
+
+                <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label htmlFor="birth-date" className="text-xs text-slate-500 mb-1 block">出生日期</label>
@@ -581,6 +655,13 @@ export default function App() {
                     />
                   </div>
                 </div>
+
+                {gestationalAge && (
+                  <div className={`rounded-xl border p-3 text-sm ${gestationalAge.isPreTerm ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
+                    出生孕周：{gestationalAge.weeks} 周 {gestationalAge.remainingDays} 天，
+                    {gestationalAge.isPreTerm ? '婴儿未足月' : '婴儿已足月✅'}
+                  </div>
+                )}
 
                 <div>
                   <label htmlFor="birth-weight" className="text-xs text-slate-500 mb-1 block">出生体重 (kg)</label>
@@ -678,7 +759,9 @@ export default function App() {
                 >
                   <Plus size={18} /> 保存出生信息
                 </button>
-              </div>
+                </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -819,7 +902,7 @@ export default function App() {
                       {log.type === 'feeding' && `🍼 ${log.detail}`}
                       {log.type === 'diaper' && `🪰 ${log.detail}`}
                       {log.type === 'alert' && `🔔 ${log.detail}`}
-                      {log.type === 'birth' && `👶 出生记录：${log.birthDate} ${log.birthTime}，体重 ${log.weight} kg${log.height ? `，身高 ${log.height} cm` : ''}`}
+                      {log.type === 'birth' && `👶 出生记录：${log.birthDate} ${log.birthTime}，体重 ${log.weight} kg${log.height ? `，身高 ${log.height} cm` : ''}${log.gestationalAge ? `，出生孕周 ${log.gestationalAge.weeks} 周 ${log.gestationalAge.remainingDays} 天` : ''}`}
                     </div>
                     <div className="text-xs text-slate-400 mt-1">{log.timestamp}</div>
                     {log.type === 'birth' && log.mainCondition && (
