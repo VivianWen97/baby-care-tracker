@@ -1,19 +1,63 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
-import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell } from 'lucide-react';
+import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell, Users } from 'lucide-react';
 import analyzeContractions, { getContractionChartRange } from './lib/contractionStats';
+import { db } from './firebase';
+import { ref, onValue, set } from 'firebase/database';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('contraction');
   const [alertMessage, setAlertMessage] = useState(null);
-  const [logs, setLogs] = useState(() => {
-    const saved = localStorage.getItem('care_logs');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [logs, setLogs] = useState([]);
+  const [roomCode, setRoomCode] = useState(() => localStorage.getItem('family_room_code') || '');
+  const [inputCode, setInputCode] = useState('');
+  const [roomLoadKey, setRoomLoadKey] = useState(0);
 
+  // Listen to Firebase updates in real time whenever roomCode changes
   useEffect(() => {
-    localStorage.setItem('care_logs', JSON.stringify(logs));
-  }, [logs]);
+    if (!roomCode) return;
+    const roomRef = ref(db, `rooms/${roomCode}/logs`);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setLogs(Object.values(data).filter(Boolean).sort((first, second) => second.id - first.id));
+        return;
+      }
+      setLogs([]);
+    }, (error) => {
+      console.error('Failed to load room history:', error);
+      setLogs([]);
+    });
+    return () => unsubscribe();
+  }, [roomCode, roomLoadKey]);
+
+  // Helper to sync new logs back to Firebase
+  const saveLogsToCloud = (updatedLogs) => {
+    if (!roomCode) return;
+    const logsById = updatedLogs.reduce((entries, log) => {
+      entries[String(log.id)] = log;
+      return entries;
+    }, {});
+
+    set(ref(db, `rooms/${roomCode}/logs`), logsById).catch((error) => {
+      console.error('Failed to save room history:', error);
+    });
+  };
+
+  const updateLogs = (updatedLogs) => {
+    setLogs(updatedLogs);
+    saveLogsToCloud(updatedLogs);
+  };
+
+  const joinRoom = () => {
+    const formatted = inputCode.trim().toLowerCase();
+    if (!formatted) return alert('请输入家庭暗号/房间号');
+
+    setLogs([]);
+    setRoomCode(formatted);
+    setRoomLoadKey((currentKey) => currentKey + 1);
+    localStorage.setItem('family_room_code', formatted);
+  };
 
   // Contraction Timer
   const [isTiming, setIsTiming] = useState(false);
@@ -21,6 +65,12 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0);
   const chartRef = useRef(null);
   const [dismissedOutlierKey, setDismissedOutlierKey] = useState(null);
+
+  useEffect(() => {
+    setIsTiming(false);
+    setStartTime(null);
+    setElapsed(0);
+  }, [roomCode]);
 
   const showAlert = (message) => {
     setAlertMessage(message);
@@ -55,7 +105,7 @@ export default function App() {
         endTime: endedAt.toISOString(),
         duration: elapsed,
       };
-      setLogs([newLog, ...logs]);
+      updateLogs([newLog, ...logs]);
     }
   };
 
@@ -220,7 +270,11 @@ export default function App() {
           timestamp: new Date(now).toLocaleString('en-US', {timeZone: 'America/New_York'}),
           detail: '恭喜妈妈！宫缩进入活跃期且持续,可以前往医院。',
         };
-        setLogs((currentLogs) => [newLog, ...currentLogs]);
+        setLogs((currentLogs) => {
+          const updatedLogs = [newLog, ...currentLogs];
+          saveLogsToCloud(updatedLogs);
+          return updatedLogs;
+        });
       }
     }
 
@@ -238,7 +292,11 @@ export default function App() {
           timestamp: new Date(now).toLocaleString('en-US', {timeZone: 'America/New_York'}),
           detail: '温馨提示:宫缩间隔约4分钟,若需要,可向医护人员咨询epidural。',
         };
-        setLogs((currentLogs) => [newLog, ...currentLogs]);
+        setLogs((currentLogs) => {
+          const updatedLogs = [newLog, ...currentLogs];
+          saveLogsToCloud(updatedLogs);
+          return updatedLogs;
+        });
       }
     }
   }, [contractionStats]);
@@ -257,7 +315,7 @@ export default function App() {
       detail: feedType === 'bottle' ? `瓶喂 ${feedAmount} ml` : `亲喂 (${feedType === 'breast_left' ? '左侧' : '右侧'})`,
       timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
     };
-    setLogs([newLog, ...logs]);
+    updateLogs([newLog, ...logs]);
     setFeedAmount('');
     showAlert('已记录喂奶！');
   };
@@ -274,21 +332,57 @@ export default function App() {
       detail: labels[diaperType] + (diaperNote ? ` (${diaperNote})` : ''),
       timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
     };
-    setLogs([newLog, ...logs]);
+    updateLogs([newLog, ...logs]);
     setDiaperNote('');
     showAlert('已记录换尿裤！');
   };
 
   const deleteLog = (id) => {
-    setLogs(logs.filter((log) => log.id !== id));
+    updateLogs(logs.filter((log) => log.id !== id));
   };
+
+  // If no family room code is set, ask user to enter one
+  if (!roomCode) {
+    return (
+      <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col justify-center p-6">
+        <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-100 text-center space-y-4">
+          <Users size={48} className="mx-auto text-green-600" />
+          <h2 className="text-xl font-bold text-slate-800">设置家庭共享房间</h2>
+          <p className="text-xs text-slate-500">
+            宝妈和宝爸输入相同的“家庭暗号”，即可跨手机实时同步所有记录。
+          </p>
+          <input
+            type="text"
+            placeholder="例如: baby-2026"
+            value={inputCode}
+            onChange={(e) => setInputCode(e.target.value)}
+            className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-600 text-center text-lg font-bold"
+          />
+          <button
+            onClick={joinRoom}
+            className="w-full py-3 bg-green-600 text-white rounded-xl font-bold"
+          >
+            进入 / 创建房间
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-50 flex flex-col font-sans">
       <header className="bg-green-300 text-white p-4 text-center font-bold text-lg shadow-md">
-        🦖小恐龙破壳日记录&新生护理助手🦖
+        <span className="font-bold text-lg">🦖小恐龙破壳日记录&新生护理助手🦖</span>
       </header>
-
+      <button
+          onClick={() => {
+            localStorage.removeItem('family_room_code');
+            setRoomCode('');
+          }}
+          className="text-xs text-white text-left bg-gray-400 px-2 py-1 rounded border border-gray-400 opacity-80"
+        >
+          共享房间号: {roomCode}
+      </button>
       <main className="flex-1 p-4 pb-20">
         {activeTab === 'contraction' && (
           <div className="flex flex-col items-center justify-center space-y-6 pt-8">
