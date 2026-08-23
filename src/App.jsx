@@ -17,6 +17,8 @@ export default function App() {
     birthTime: '',
     weight: '',
     height: '',
+    mainCondition: '',
+    issues: [],
     condition: '',
   });
 
@@ -44,11 +46,13 @@ export default function App() {
           birthTime: data.birthTime || '',
           weight: data.weight || '',
           height: data.height || '',
+          mainCondition: data.mainCondition || '',
+          issues: Array.isArray(data.issues) ? data.issues : [],
           condition: data.condition || '',
         });
         return;
       }
-      setBirthStats({ birthDate: '', birthTime: '', weight: '', height: '', condition: '' });
+      setBirthStats({ birthDate: '', birthTime: '', weight: '', height: '', mainCondition: '', issues: [], condition: '' });
     }, (error) => {
       console.error('Failed to load birth stats:', error);
     });
@@ -84,6 +88,7 @@ export default function App() {
     const normalizedBirthStats = {
       ...birthStats,
       height: birthStats.height.trim(),
+      issues: birthStats.issues,
       condition: birthStats.condition.trim(),
     };
     const birthLog = {
@@ -152,6 +157,11 @@ export default function App() {
       setIsTiming(false);
       const startedAt = new Date(startTime);
       const endedAt = new Date(startTime + elapsed * 1000);
+      const lastEndTime = logs
+        .filter((log) => log.type === 'contraction' && log.endTime)
+        .map((log) => new Date(log.endTime).getTime())
+        .filter((time) => Number.isFinite(time) && time <= startedAt.getTime())
+        .reduce((latest, time) => Math.max(latest, time), null);
       const newLog = {
         id: Date.now(),
         type: 'contraction',
@@ -159,6 +169,9 @@ export default function App() {
         startTime: startedAt.toISOString(),
         endTime: endedAt.toISOString(),
         duration: elapsed,
+        ...(lastEndTime !== null && {
+          interval: Number(((startedAt.getTime() - lastEndTime) / 60000).toFixed(1)),
+        }),
       };
       updateLogs([newLog, ...logs]);
     }
@@ -600,7 +613,55 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label htmlFor="birth-condition" className="text-xs text-slate-500 mb-1 block">宝宝状况 (可选)</label>
+                  <label htmlFor="birth-main-condition" className="text-xs text-slate-500 mb-1 block">宝宝主要情况</label>
+                  <select
+                    id="birth-main-condition"
+                    value={birthStats.mainCondition}
+                    onChange={(e) => setBirthStats({ ...birthStats, mainCondition: e.target.value })}
+                    className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm bg-white"
+                  >
+                    <option value="">请选择宝宝主要情况</option>
+                    <option value="我家宝贝当然是个完美宝贝">我家宝贝当然是个完美宝贝💯</option>
+                    <option value="需要继续观察">需要继续观察🖊</option>
+                    <option value="医生建议进NICU">医生建议进NICU🏥</option>
+                    <option value="医生建议进保温箱">医生建议进保温箱🧊</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="text-xs text-slate-500 mb-2">新生儿问题 (可多选)</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      '黄疸或皮肤发黄',
+                      '吸吮无力',
+                      '体温异常',
+                      '呼吸不顺：急促、喘息或暂停',
+                      '脐带红肿或渗液',
+                      '皮疹',
+                      '体重偏低',
+                      '抽搐或身体持续抖动',
+                      '其他问题'
+                    ].map((issue) => (
+                      <label key={issue} className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={birthStats.issues.includes(issue)}
+                          onChange={(e) => setBirthStats({
+                            ...birthStats,
+                            issues: e.target.checked
+                              ? [...birthStats.issues, issue]
+                              : birthStats.issues.filter((selectedIssue) => selectedIssue !== issue),
+                          })}
+                          className="mt-0.5 accent-green-300"
+                        />
+                        <span>{issue}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="birth-condition" className="text-xs text-slate-500 mb-1 block">补充说明 (可选)</label>
                   <textarea
                     id="birth-condition"
                     rows="3"
@@ -754,13 +815,19 @@ export default function App() {
                 >
                   <div>
                     <div className="font-bold text-slate-800 text-sm">
-                      {log.type === 'contraction' && `⚡ 宫缩持续 ${log.duration} 秒`}
+                      {log.type === 'contraction' && `⚡ 宫缩持续 ${log.duration} 秒${log.interval !== undefined ? `，距上次结束 ${log.interval} 分钟` : ''}`}
                       {log.type === 'feeding' && `🍼 ${log.detail}`}
                       {log.type === 'diaper' && `🪰 ${log.detail}`}
                       {log.type === 'alert' && `🔔 ${log.detail}`}
                       {log.type === 'birth' && `👶 出生记录：${log.birthDate} ${log.birthTime}，体重 ${log.weight} kg${log.height ? `，身高 ${log.height} cm` : ''}`}
                     </div>
                     <div className="text-xs text-slate-400 mt-1">{log.timestamp}</div>
+                    {log.type === 'birth' && log.mainCondition && (
+                      <div className="text-xs text-slate-500 mt-1">主要状况：{log.mainCondition}</div>
+                    )}
+                    {log.type === 'birth' && log.issues?.length > 0 && (
+                      <div className="text-xs text-slate-500 mt-1">新生儿问题：{log.issues.join('、')}</div>
+                    )}
                     {log.type === 'birth' && log.condition && (
                       <div className="text-xs text-slate-500 mt-1">宝宝状况：{log.condition}</div>
                     )}
