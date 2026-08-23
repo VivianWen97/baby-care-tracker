@@ -12,12 +12,20 @@ export default function App() {
   const [roomCode, setRoomCode] = useState(() => localStorage.getItem('family_room_code') || '');
   const [inputCode, setInputCode] = useState('');
   const [roomLoadKey, setRoomLoadKey] = useState(0);
+  const [birthStats, setBirthStats] = useState({
+    birthDate: '',
+    birthTime: '',
+    weight: '',
+    height: '',
+    condition: '',
+  });
 
   // Listen to Firebase updates in real time whenever roomCode changes
   useEffect(() => {
     if (!roomCode) return;
     const roomRef = ref(db, `rooms/${roomCode}/logs`);
-    const unsubscribe = onValue(roomRef, (snapshot) => {
+    const birthStatsRef = ref(db, `rooms/${roomCode}/birthStats`);
+    const unsubscribeLogs = onValue(roomRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setLogs(Object.values(data).filter(Boolean).sort((first, second) => second.id - first.id));
@@ -28,7 +36,26 @@ export default function App() {
       console.error('Failed to load room history:', error);
       setLogs([]);
     });
-    return () => unsubscribe();
+    const unsubscribeBirthStats = onValue(birthStatsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setBirthStats({
+          birthDate: data.birthDate || '',
+          birthTime: data.birthTime || '',
+          weight: data.weight || '',
+          height: data.height || '',
+          condition: data.condition || '',
+        });
+        return;
+      }
+      setBirthStats({ birthDate: '', birthTime: '', weight: '', height: '', condition: '' });
+    }, (error) => {
+      console.error('Failed to load birth stats:', error);
+    });
+    return () => {
+      unsubscribeLogs();
+      unsubscribeBirthStats();
+    };
   }, [roomCode, roomLoadKey]);
 
   // Helper to sync new logs back to Firebase
@@ -47,6 +74,32 @@ export default function App() {
   const updateLogs = (updatedLogs) => {
     setLogs(updatedLogs);
     saveLogsToCloud(updatedLogs);
+  };
+
+  const saveBirthStats = () => {
+    if (!birthStats.birthDate || !birthStats.birthTime || !birthStats.weight) {
+      return showAlert('请填写出生日期、时间和体重');
+    }
+    const normalizedBirthStats = {
+      ...birthStats,
+      height: birthStats.height.trim(),
+      condition: birthStats.condition.trim(),
+    };
+    const birthLog = {
+      id: Date.now(),
+      type: 'birth',
+      timestamp: `${normalizedBirthStats.birthDate} ${normalizedBirthStats.birthTime}`,
+      ...normalizedBirthStats,
+    };
+    set(ref(db, `rooms/${roomCode}/birthStats`), {
+      ...normalizedBirthStats,
+    }).then(() => {
+      updateLogs([birthLog, ...logs.filter((log) => log.type !== 'birth')]);
+      showAlert('已保存宝宝出生信息！');
+    }).catch((error) => {
+      console.error('Failed to save birth stats:', error);
+      showAlert('保存失败，请稍后重试');
+    });
   };
 
   const joinRoom = () => {
@@ -482,6 +535,88 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            <div className="max-w-sm w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-6">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-slate-800">宝宝出生信息</h2>
+                <p className="mt-1 text-xs text-slate-500">记录宝宝出生时的准确资料</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="birth-date" className="text-xs text-slate-500 mb-1 block">出生日期</label>
+                    <input
+                      id="birth-date"
+                      type="date"
+                      value={birthStats.birthDate}
+                      onChange={(e) => setBirthStats({ ...birthStats, birthDate: e.target.value })}
+                      className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="birth-time" className="text-xs text-slate-500 mb-1 block">出生时间</label>
+                    <input
+                      id="birth-time"
+                      type="time"
+                      step="1"
+                      value={birthStats.birthTime}
+                      onChange={(e) => setBirthStats({ ...birthStats, birthTime: e.target.value })}
+                      className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="birth-weight" className="text-xs text-slate-500 mb-1 block">出生体重 (kg)</label>
+                  <input
+                    id="birth-weight"
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    inputMode="decimal"
+                    placeholder="例如：3.25"
+                    value={birthStats.weight}
+                    onChange={(e) => setBirthStats({ ...birthStats, weight: e.target.value })}
+                    className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="birth-height" className="text-xs text-slate-500 mb-1 block">出生身高 (cm，可选)</label>
+                  <input
+                    id="birth-height"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    inputMode="decimal"
+                    placeholder="例如：50"
+                    value={birthStats.height}
+                    onChange={(e) => setBirthStats({ ...birthStats, height: e.target.value })}
+                    className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="birth-condition" className="text-xs text-slate-500 mb-1 block">宝宝状况 (可选)</label>
+                  <textarea
+                    id="birth-condition"
+                    rows="3"
+                    placeholder="例如：哭声响亮，肤色正常"
+                    value={birthStats.condition}
+                    onChange={(e) => setBirthStats({ ...birthStats, condition: e.target.value })}
+                    className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm resize-none"
+                  />
+                </div>
+
+                <button
+                  onClick={saveBirthStats}
+                  className="w-full py-3 bg-green-300 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+                >
+                  <Plus size={18} /> 保存出生信息
+                </button>
+              </div>
+            </div>
           </div>
 
         )}
@@ -621,8 +756,12 @@ export default function App() {
                       {log.type === 'feeding' && `🍼 ${log.detail}`}
                       {log.type === 'diaper' && `🪰 ${log.detail}`}
                       {log.type === 'alert' && `🔔 ${log.detail}`}
+                      {log.type === 'birth' && `👶 出生记录：${log.birthDate} ${log.birthTime}，体重 ${log.weight} kg${log.height ? `，身高 ${log.height} cm` : ''}`}
                     </div>
                     <div className="text-xs text-slate-400 mt-1">{log.timestamp}</div>
+                    {log.type === 'birth' && log.condition && (
+                      <div className="text-xs text-slate-500 mt-1">宝宝状况：{log.condition}</div>
+                    )}
                   </div>
                   <button onClick={() => deleteLog(log.id)} className="text-slate-300 hover:text-rose-500 p-1">
                     <Trash2 size={18} />
