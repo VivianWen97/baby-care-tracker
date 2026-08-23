@@ -1,3 +1,33 @@
+export function getContractionChartRange(logs, opts = {}) {
+  const focusWindowMs = opts.focusWindowMs ?? 6 * 60 * 60 * 1000;
+  const minimumRangeMs = opts.minimumRangeMs ?? 15 * 60 * 1000;
+  const paddingRatio = opts.paddingRatio ?? 0.1;
+
+  const contractions = (logs || [])
+    .filter((log) => log.type === 'contraction' && log.startTime && log.endTime)
+    .map((log) => ({
+      start: new Date(log.startTime).getTime(),
+      end: new Date(log.endTime).getTime(),
+    }))
+    .filter((log) => Number.isFinite(log.start) && Number.isFinite(log.end) && log.end >= log.start)
+    .sort((a, b) => a.end - b.end);
+
+  if (!contractions.length) return null;
+
+  const latestEnd = contractions[contractions.length - 1].end;
+  const focused = contractions.filter((contraction) => contraction.end >= latestEnd - focusWindowMs);
+  const dataStart = Math.min(...focused.map((contraction) => contraction.start));
+  const dataEnd = Math.max(...focused.map((contraction) => contraction.end));
+  const dataSpan = dataEnd - dataStart;
+  const range = Math.max(minimumRangeMs, dataSpan * (1 + paddingRatio));
+  const center = (dataStart + dataEnd) / 2;
+
+  return {
+    min: center - range / 2,
+    max: center + range / 2,
+  };
+}
+
 export function analyzeContractions(logs, now = Date.now(), opts = {}) {
   const shortWindowMs = opts.shortWindowMs ?? 60 * 60 * 1000;
   const mediumWindowMs = opts.mediumWindowMs ?? 6 * 60 * 60 * 1000;

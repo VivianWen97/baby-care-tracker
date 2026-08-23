@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import analyzeContractions from '../src/lib/contractionStats.js';
+import analyzeContractions, { getContractionChartRange } from '../src/lib/contractionStats.js';
 
 function makeLog(startMs, durationSec) {
   const start = new Date(startMs).toISOString();
@@ -113,5 +113,31 @@ describe('analyzeContractions', () => {
     expect(res.outliers.durationOutliers.length).toBe(0);
     expect(res.outliers.intervalOutliers.length).toBe(0);
     expect(res.outlierHypothesis).toBeNull();
+  });
+});
+
+describe('getContractionChartRange', () => {
+  const now = Date.now();
+
+  it('creates a readable minimum range for one contraction', () => {
+    const range = getContractionChartRange([makeLog(now, 45)]);
+
+    expect(range.max - range.min).toBe(15 * 60 * 1000);
+    expect((range.min + range.max) / 2).toBe(now + 22.5 * 1000);
+  });
+
+  it('focuses on the latest six-hour activity cluster', () => {
+    const range = getContractionChartRange([
+      makeLog(now - 24 * 60 * 60 * 1000, 45),
+      makeLog(now - 5 * 60 * 60 * 1000, 45),
+      makeLog(now - 4 * 60 * 60 * 1000, 45),
+    ]);
+
+    expect(range.min).toBeGreaterThan(now - 6 * 60 * 60 * 1000);
+    expect(range.max).toBeLessThan(now);
+  });
+
+  it('returns no range when there are no contractions', () => {
+    expect(getContractionChartRange([])).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
-import { Timer, Baby, Heart, History, Trash2, Play, Square, Plus } from 'lucide-react';
-import analyzeContractions from './lib/contractionStats';
+import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell } from 'lucide-react';
+import analyzeContractions, { getContractionChartRange } from './lib/contractionStats';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('contraction');
+  const [alertMessage, setAlertMessage] = useState(null);
   const [logs, setLogs] = useState(() => {
     const saved = localStorage.getItem('care_logs');
     return saved ? JSON.parse(saved) : [];
@@ -20,6 +21,10 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0);
   const chartRef = useRef(null);
   const [dismissedOutlierKey, setDismissedOutlierKey] = useState(null);
+
+  const showAlert = (message) => {
+    setAlertMessage(message);
+  };
 
   useEffect(() => {
     let interval = null;
@@ -73,6 +78,24 @@ export default function App() {
       });
   }, [logs]);
 
+  // Compute chart range for better visualization
+  const contractionChartRange = useMemo(() => getContractionChartRange(logs), [logs]);
+  const contractionChartDateRange = useMemo(() => {
+    if (!contractionChartRange) return '暂无日期';
+
+    const formatter = new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      timeZone: 'America/New_York',
+    });
+
+    const startDate = formatter.format(contractionChartRange.min);
+    const endDate = formatter.format(contractionChartRange.max);
+
+    return startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+  }, [contractionChartRange]);
+
   useEffect(() => {
     if (activeTab !== 'contraction' || !chartRef.current) return;
 
@@ -86,7 +109,11 @@ export default function App() {
         type: 'line',
         fontFamily: 'Inter, sans-serif',
         toolbar: {
-          show: false,
+          show: true,
+          tools: {
+            download: false,
+            selection: false,
+          },
         },
       },
       series: contractionSeries.map((series) => ({
@@ -108,6 +135,7 @@ export default function App() {
       },
       xaxis: {
         type: 'datetime',
+        ...(contractionChartRange || {}),
         labels: {
           show: true,
           datetimeUTC: false,
@@ -118,7 +146,7 @@ export default function App() {
       },
       yaxis: {
         min: 0,
-        max: 10,
+        max: 5,
         labels: {
           show: false,
         },
@@ -176,25 +204,41 @@ export default function App() {
 
     // Active hospital alert: short window criteria
     const s = stat.shortStats;
+    const lastHosp = getLast('last_hospital_alert') || 0;
+    let hospitalAlertDetected = lastHosp > 0;
     if (s && s.count >= 3) {
       const isActiveMean = s.meanDuration && s.meanInterval && s.meanDuration >= 45 && s.meanDuration <= 60 && s.meanInterval >= 180 && s.meanInterval <= 300;
       const consistent = s.cvIntervals !== null ? s.cvIntervals < 0.35 : true;
-      const lastHosp = getLast('last_hospital_alert') || 0;
       const hospCooldown = 60 * 60 * 1000; // 1 hour
       if (isActiveMean && consistent && now - lastHosp > hospCooldown) {
-        alert('宫缩进入活跃期且持续，可能需要前往医院。');
+        hospitalAlertDetected = true;
+        showAlert('宫缩进入活跃期且持续,可以前往医院。');
         setLast('last_hospital_alert', now);
+        const newLog = {
+          id: Date.now(),
+          type: 'alert',
+          timestamp: new Date(now).toLocaleString('en-US', {timeZone: 'America/New_York'}),
+          detail: '恭喜妈妈！宫缩进入活跃期且持续,可以前往医院。',
+        };
+        setLogs((currentLogs) => [newLog, ...currentLogs]);
       }
     }
 
-    // Epidural tip when approx 4 minutes apart
-    if (s && s.meanInterval && s.meanInterval <= 240 && s.count >= 2) {
+    // Epidural tip is only available after a hospital alert has been detected and when approx 4 minutes apart.
+    if (hospitalAlertDetected && s && s.meanInterval && s.meanInterval <= 240 && s.count >= 2) {
       const lastEpi = getLast('last_epidural_tip') || 0;
       const epiCooldown = 6 * 60 * 60 * 1000; // 6 hours
       if (now - lastEpi > epiCooldown) {
         // show non-blocking tip in UI by storing a flag; also show a quick alert
-        alert('提示：宫缩间隔约4分钟，若需要，可向医护人员咨询硬膜外镇痛（epidural）。');
+        showAlert('温馨提示:宫缩间隔约4分钟,若需要,可向医护人员咨询epidural。');
         setLast('last_epidural_tip', now);
+        const newLog = {
+          id: Date.now(),
+          type: 'alert',
+          timestamp: new Date(now).toLocaleString('en-US', {timeZone: 'America/New_York'}),
+          detail: '温馨提示:宫缩间隔约4分钟,若需要,可向医护人员咨询epidural。',
+        };
+        setLogs((currentLogs) => [newLog, ...currentLogs]);
       }
     }
   }, [contractionStats]);
@@ -204,7 +248,9 @@ export default function App() {
   const [feedAmount, setFeedAmount] = useState('');
 
   const addFeedingLog = () => {
-    if (feedType === 'bottle' && !feedAmount) return alert('请输入喂奶毫升数');
+    if ((feedType === 'formula_bottle' || feedType === 'pump_bottle') && !feedAmount) {
+      return showAlert('请输入喂奶毫升数');
+    }
     const newLog = {
       id: Date.now(),
       type: 'feeding',
@@ -213,7 +259,7 @@ export default function App() {
     };
     setLogs([newLog, ...logs]);
     setFeedAmount('');
-    alert('已记录喂奶！');
+    showAlert('已记录喂奶！');
   };
 
   // Diaper Tracker
@@ -230,7 +276,7 @@ export default function App() {
     };
     setLogs([newLog, ...logs]);
     setDiaperNote('');
-    alert('已记录换尿裤！');
+    showAlert('已记录换尿裤！');
   };
 
   const deleteLog = (id) => {
@@ -269,7 +315,7 @@ export default function App() {
                 <div className="grid gap-4 grid-cols-2">
                   <div>
                     <h5 className="inline-flex items-center text-slate-600">宫缩趋势</h5>
-                    <p className="text-slate-800 text-xl font-semibold">近7天</p>
+                    <p className="text-slate-800 text-xl font-semibold">{contractionChartDateRange}</p>
                   </div>
                 </div>
               </div>
@@ -480,6 +526,7 @@ export default function App() {
                       {log.type === 'contraction' && `⚡ 宫缩持续 ${log.duration} 秒`}
                       {log.type === 'feeding' && `🍼 ${log.detail}`}
                       {log.type === 'diaper' && `🪰 ${log.detail}`}
+                      {log.type === 'alert' && `🔔 ${log.detail}`}
                     </div>
                     <div className="text-xs text-slate-400 mt-1">{log.timestamp}</div>
                   </div>
@@ -496,8 +543,9 @@ export default function App() {
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 flex justify-around p-2">
         {[
           { id: 'contraction', label: '宫缩', icon: Timer },
-          { id: 'feeding', label: '喂奶', icon: Baby },
-          { id: 'diaper', label: '排便', icon: Heart },
+          { id: 'feeding', label: '喂奶', icon: Milk },
+          { id: 'diaper', label: '排泄', icon: Toilet },
+          { id: 'sleep', label: '睡眠', icon: Moon },
           { id: 'history', label: '历史', icon: History },
         ].map((item) => {
           const Icon = item.icon;
@@ -516,6 +564,39 @@ export default function App() {
           );
         })}
       </nav>
+
+      {alertMessage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="alert-title"
+            aria-describedby="alert-message"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-green-50 text-green-300">
+                <Bell size={20} aria-hidden="true" />
+              </div>
+              <div>
+                <h2 id="alert-title" className="text-lg font-bold text-slate-800">温馨提示</h2>
+                <p id="alert-message" className="mt-2 text-sm leading-6 text-slate-600">{alertMessage}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setAlertMessage(null)}
+              className="mt-6 w-full rounded-xl bg-green-300 py-3 font-bold text-white transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:ring-offset-2"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
