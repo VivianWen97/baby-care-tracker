@@ -92,14 +92,14 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
     const matches = {
       pushing: d && inRange(d, [60, 90]),
       transition: d && inRange(d, [60, 90]) && i && inRange(i, [60, 180]),
-      active: d && inRange(d, [45, 60]) && i && inRange(i, [180, 300]),
-      early: d && inRange(d, [30, 45]) && i && inRange(i, [300, 1800]),
+      active: d && inRange(d, [45, 65]) && i && inRange(i, [180, 300]),
+      early: d && inRange(d, [30, 50]) && i && inRange(i, [300, 1800]),
     };
     if (matches.pushing) return { stage: 'Pushing & Birth' };
     if (matches.transition) return { stage: 'Transition' };
     if (matches.active) return { stage: 'Active Labor' };
     if (matches.early) return { stage: 'Early Labor' };
-    if (s.count < 3) return { stage: 'Insufficient data', reason: 'few contractions' };
+    if (s.count < 3) return { stage: 'Insufficient data', reason: 'too few contractions' };
     return { stage: 'Unclear', reason: 'ambiguous metrics' };
   };
 
