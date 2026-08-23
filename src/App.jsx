@@ -76,6 +76,7 @@ export default function App() {
     saveLogsToCloud(updatedLogs);
   };
 
+  // Save birth stats to Firebase as log and separate birthStats object
   const saveBirthStats = () => {
     if (!birthStats.birthDate || !birthStats.birthTime || !birthStats.weight) {
       return showAlert('请填写出生日期、时间和体重');
@@ -95,13 +96,14 @@ export default function App() {
       ...normalizedBirthStats,
     }).then(() => {
       updateLogs([birthLog, ...logs.filter((log) => log.type !== 'birth')]);
-      showAlert('已保存宝宝出生信息！');
+      showAlert('已保存出生信息！快去和宝宝有爱的skin-to-skin吧！');
     }).catch((error) => {
       console.error('Failed to save birth stats:', error);
       showAlert('保存失败，请稍后重试');
     });
   };
 
+  // Re-enter or create a family room code
   const joinRoom = () => {
     const formatted = inputCode.trim().toLowerCase();
     if (!formatted) return alert('请输入家庭暗号/房间号');
@@ -538,7 +540,7 @@ export default function App() {
 
             <div className="max-w-sm w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-6">
               <div className="mb-4">
-                <h2 className="text-lg font-bold text-slate-800">宝宝出生信息</h2>
+                <h2 className="text-lg font-bold text-slate-800">恐龙宝宝诞生❤️欢迎来到这个世界！</h2>
                 <p className="mt-1 text-xs text-slate-500">记录宝宝出生时的准确资料</p>
               </div>
 
