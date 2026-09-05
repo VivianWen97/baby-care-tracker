@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
-import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell, Users } from 'lucide-react';
+import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell, Users, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import analyzeContractions, { getContractionChartRange } from './lib/contractionStats';
 import { db } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
@@ -31,6 +31,43 @@ function calculateGestationalAge(dueDate, birthDate) {
   };
 }
 
+const NEW_YORK_TIME_ZONE = 'America/New_York';
+
+function getLocalDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: NEW_YORK_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = parts.reduce((result, part) => {
+    if (part.type !== 'literal') result[part.type] = part.value;
+    return result;
+  }, {});
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function formatCalendarMonth(monthDate) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(monthDate);
+}
+
+function getCalendarDays(monthDate) {
+  const year = monthDate.getUTCFullYear();
+  const month = monthDate.getUTCMonth();
+  const firstDay = new Date(Date.UTC(year, month, 1));
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const leadingDays = firstDay.getUTCDay();
+
+  return Array.from({ length: leadingDays + daysInMonth }, (_, index) => {
+    if (index < leadingDays) return null;
+    return new Date(Date.UTC(year, month, index - leadingDays + 1));
+  });
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('contraction');
   const [alertMessage, setAlertMessage] = useState(null);
@@ -41,6 +78,7 @@ export default function App() {
   const [roomLoadKey, setRoomLoadKey] = useState(0);
   const [birthStats, setBirthStats] = useState(EMPTY_BIRTH_STATS);
   const [birthStatsOpen, setBirthStatsOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(null);
 
   // Listen to Firebase updates in real time whenever roomCode changes
   useEffect(() => {
@@ -408,18 +446,30 @@ export default function App() {
   }, [contractionStats]);
 
   // Feeding Tracker
-  const [feedType, setFeedType] = useState('breast_left');
+  const [feedTypes, setFeedTypes] = useState(['breast_left']);
   const [feedAmount, setFeedAmount] = useState('');
 
   const addFeedingLog = () => {
-    if ((feedType === 'formula_bottle' || feedType === 'pump_bottle') && !feedAmount) {
+    if (feedTypes.length === 0) {
+      return showAlert('请选择喂奶方式');
+    }
+    const includesBottle = feedTypes.includes('formula_bottle') || feedTypes.includes('pump_bottle');
+    if (includesBottle && !feedAmount) {
       return showAlert('请输入喂奶毫升数');
     }
+    const feedLabels = {
+      breast_left: '亲喂 (左侧)',
+      breast_right: '亲喂 (右侧)',
+      pump_bottle: '母乳瓶喂',
+      formula_bottle: '配方奶/水奶',
+    };
     const newLog = {
       id: Date.now(),
       type: 'feeding',
-      detail: feedType === 'bottle' ? `瓶喂 ${feedAmount} ml` : `亲喂 (${feedType === 'breast_left' ? '左侧' : '右侧'})`,
-      timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
+      detail: feedTypes.map((type) => `${feedLabels[type]}${includesBottle && (type === 'formula_bottle' || type === 'pump_bottle') ? ` ${feedAmount} ml` : ''}`).join('、'),
+      amount: includesBottle ? Number(feedAmount) : null,
+      dateKey: getLocalDateKey(),
+      timestamp: new Date().toLocaleString('en-US', {timeZone: NEW_YORK_TIME_ZONE}),
     };
     updateLogs([newLog, ...logs]);
     setFeedAmount('');
@@ -450,6 +500,32 @@ export default function App() {
   const gestationalAge = useMemo(
     () => calculateGestationalAge(dueDate, birthStats.birthDate),
     [dueDate, birthStats.birthDate],
+  );
+
+  useEffect(() => {
+    if (!birthStats.birthDate) {
+      setCalendarMonth(null);
+      return;
+    }
+    const [year, month] = birthStats.birthDate.split('-').map(Number);
+    if (year && month) setCalendarMonth(new Date(Date.UTC(year, month - 1, 1)));
+  }, [birthStats.birthDate]);
+
+  const feedingSummaryByDay = useMemo(() => logs
+    .filter((log) => log.type === 'feeding')
+    .reduce((summary, log) => {
+      const dateKey = log.dateKey || getLocalDateKey(new Date(log.timestamp));
+      if (!dateKey) return summary;
+      if (!summary[dateKey]) summary[dateKey] = { count: 0, amount: 0, details: [] };
+      summary[dateKey].count += 1;
+      summary[dateKey].amount += Number(log.amount) || 0;
+      summary[dateKey].details.push(log.detail);
+      return summary;
+    }, {}), [logs]);
+
+  const calendarDays = useMemo(
+    () => calendarMonth ? getCalendarDays(calendarMonth) : [],
+    [calendarMonth],
   );
 
   // If no family room code is set, ask user to enter one
@@ -770,6 +846,64 @@ export default function App() {
         {activeTab === 'feeding' && (
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
             <h2 className="text-lg font-bold text-slate-800 mb-2">喂奶记录</h2>
+            {calendarMonth ? (
+              <section className="rounded-2xl border border-green-100 bg-green-50/40 p-3" aria-label="喂奶日历">
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    type="button"
+                    aria-label="上一个月"
+                    onClick={() => setCalendarMonth(new Date(Date.UTC(calendarMonth.getUTCFullYear(), calendarMonth.getUTCMonth() - 1, 1)))}
+                    className="p-2 rounded-full text-slate-500 hover:bg-white"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div className="flex items-center gap-2 font-bold text-slate-700">
+                    <CalendarDays size={17} className="text-green-500" />
+                    {formatCalendarMonth(calendarMonth)}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="下一个月"
+                    onClick={() => setCalendarMonth(new Date(Date.UTC(calendarMonth.getUTCFullYear(), calendarMonth.getUTCMonth() + 1, 1)))}
+                    className="p-2 rounded-full text-slate-500 hover:bg-white"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-slate-400 mb-1">
+                  {['日', '一', '二', '三', '四', '五', '六'].map((day) => <span key={day}>{day}</span>)}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarDays.map((day, index) => {
+                    if (!day) return <span key={`empty-${index}`} className="min-h-14" />;
+                    const dateKey = day.toISOString().slice(0, 10);
+                    const summary = feedingSummaryByDay[dateKey];
+                    const isBirthday = dateKey === birthStats.birthDate;
+                    return (
+                      <div
+                        key={dateKey}
+                        className={`min-h-14 rounded-lg p-1 text-left ${isBirthday ? 'bg-amber-50 border border-amber-300' : summary ? 'bg-white border border-green-200' : 'bg-white/50'}`}
+                        title={summary?.details.join('、')}
+                      >
+                        <div className={`text-xs font-bold ${isBirthday ? 'text-amber-700' : summary ? 'text-green-700' : 'text-slate-500'}`}>
+                          {day.getUTCDate()}{isBirthday && ' 🎂'}
+                        </div>
+                        {summary && (
+                          <div className="mt-1 text-[10px] leading-3 text-slate-600">
+                            <div>🍼 {summary.count} 次</div>
+                            {summary.amount > 0 && <div>{summary.amount} ml</div>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              <div className="rounded-xl bg-slate-50 p-3 text-center text-xs text-slate-400">
+                保存出生信息后，这里会从宝宝出生月份开始显示喂奶日历。
+              </div>
+            )}
             <div className="grid grid-cols-4 gap-2">
               {[
                 { id: 'breast_left', label: '亲喂 (左)' },
@@ -779,9 +913,11 @@ export default function App() {
               ].map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setFeedType(item.id)}
+                  onClick={() => setFeedTypes((currentTypes) => currentTypes.includes(item.id)
+                    ? currentTypes.filter((type) => type !== item.id)
+                    : [...currentTypes, item.id])}
                   className={`p-3 text-sm rounded-xl border text-center transition-all ${
-                    feedType === item.id
+                    feedTypes.includes(item.id)
                       ? 'border-green-300 bg-green-50 text-green-300 font-bold'
                       : 'border-slate-200 text-slate-600'
                   }`}
@@ -791,7 +927,7 @@ export default function App() {
               ))}
             </div>
 
-            {(feedType === 'formula_bottle' || feedType === 'pump_bottle') && (
+            {(feedTypes.includes('formula_bottle') || feedTypes.includes('pump_bottle')) && (
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">喂奶量 (ml)</label>
 
