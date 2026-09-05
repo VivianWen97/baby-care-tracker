@@ -51,6 +51,34 @@ describe('analyzeContractions', () => {
     expect(res.stage).toBe('Active Labor');
   });
 
+  it('weights newer contractions more heavily with EWMA', () => {
+    const logs = [
+      makeLog(now - 9 * 60 * 1000, 30),
+      makeLog(now - 5 * 60 * 1000, 30),
+      makeLog(now - 1 * 60 * 1000, 60),
+    ];
+    const res = analyzeContractions(logs, now, { ewmaAlpha: 0.5 });
+
+    expect(res.mediumStats.ewmaDuration).toBeGreaterThan(res.mediumStats.meanDuration);
+    expect(res.mediumStats.ewmaDuration).toBe(45);
+  });
+
+  it('uses the recent pattern when contractions become more frequent', () => {
+    const logs = [
+      makeLog(now - 121 * 60 * 1000, 35),
+      makeLog(now - 111 * 60 * 1000, 35),
+      makeLog(now - 101 * 60 * 1000, 35),
+      makeLog(now - 9 * 60 * 1000, 50),
+      makeLog(now - 5 * 60 * 1000, 50),
+      makeLog(now - 1 * 60 * 1000, 50),
+    ];
+    const res = analyzeContractions(logs, now);
+
+    expect(res.mediumStats.meanInterval).toBeGreaterThan(4 * 60);
+    expect(res.shortStats.meanInterval).toBe(4 * 60);
+    expect(res.stage).toBe('Active Labor');
+  });
+
   it('detects Transition (60-90s, 1-3min apart)', () => {
     const logs = [
       makeLog(now - 6 * 60 * 1000, 70),
