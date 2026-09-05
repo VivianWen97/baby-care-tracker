@@ -643,19 +643,19 @@ export default function App() {
                     })()}
                     <div className="flex items-center justify-between mb-2">
                       <div>
-                        <div className="text-xs text-slate-500">平均持续时间</div>
+                        <div className="text-xs text-slate-500">近期平均持续时间</div>
                         <div className="text-lg font-semibold">
-                          {contractionStats.mediumStats && contractionStats.mediumStats.meanDuration
-                            ? `${Math.round(contractionStats.mediumStats.meanDuration)} 秒`
+                          {contractionStats.mediumStats && contractionStats.mediumStats.ewmaDuration
+                            ? `${Math.round(contractionStats.mediumStats.ewmaDuration)} 秒`
                             : '—'}
                         </div>
                       </div>
 
                       <div>
-                        <div className="text-xs text-slate-500">平均间隔</div>
+                        <div className="text-xs text-slate-500">近期平均间隔</div>
                         <div className="text-lg font-semibold">
-                          {contractionStats.mediumStats && contractionStats.mediumStats.meanInterval
-                            ? `${(contractionStats.mediumStats.meanInterval / 60).toFixed(1)} 分钟`
+                          {contractionStats.mediumStats && contractionStats.mediumStats.ewmaInterval
+                            ? `${(contractionStats.mediumStats.ewmaInterval / 60).toFixed(1)} 分钟`
                             : '—'}
                         </div>
                       </div>
