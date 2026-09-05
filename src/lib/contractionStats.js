@@ -32,13 +32,13 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
   const shortWindowMs = opts.shortWindowMs ?? 60 * 60 * 1000;
   const mediumWindowMs = opts.mediumWindowMs ?? 6 * 60 * 60 * 1000;
   const cap = opts.cap ?? 50;
+  const ewmaAlpha = Math.min(1, Math.max(0, opts.ewmaAlpha ?? 0.4));
 
   const all = (logs || [])
     .filter((l) => l.type === 'contraction' && l.startTime && l.endTime)
     .map((l) => ({
       id: l.id,
       start: new Date(l.startTime).getTime(),
-      end: new Date(l.endTime).getTime(),
       duration: l.duration ?? Math.round((new Date(l.endTime) - new Date(l.startTime)) / 1000),
     }))
     .sort((a, b) => a.start - b.start);
@@ -57,6 +57,10 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
   };
 
   const mean = (xs) => (xs && xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const ewma = (xs) => {
+    if (!xs || xs.length === 0) return null;
+    return xs.slice(1).reduce((value, item) => ewmaAlpha * item + (1 - ewmaAlpha) * value, xs[0]);
+  };
   const stddev = (xs) => {
     if (!xs || xs.length === 0) return null;
     const m = mean(xs);
@@ -75,6 +79,8 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
       count: arr.length,
       meanDuration: mean(durations),
       meanInterval: mean(intervals),
+      ewmaDuration: ewma(durations),
+      ewmaInterval: ewma(intervals),
       cvIntervals,
     };
   };
@@ -84,13 +90,12 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
 
   const inRange = (val, [min, max]) => val !== null && val !== undefined && val >= min && val <= max;
 
-  // Use average (mean) for stage detection
   const detectStage = (s) => {
     if (!s || s.count < 1) return { stage: 'Insufficient data', reason: 'no contractions' };
-    const d = s.meanDuration;
-    const i = s.meanInterval;
+    const d = s.ewmaDuration;
+    const i = s.ewmaInterval;
     const matches = {
-      pushing: d && inRange(d, [60, 90]),
+      pushing: d && inRange(d, [60, 90]) && (i === null || i <= 60),
       transition: d && inRange(d, [60, 90]) && i && inRange(i, [60, 180]),
       active: d && inRange(d, [45, 65]) && i && inRange(i, [180, 300]),
       early: d && inRange(d, [30, 50]) && i && inRange(i, [300, 1800]),
@@ -133,7 +138,11 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
     return { durationOutliers, intervalOutliers };
   };
 
+  const recentStage = detectStage(shortStats);
   const mediumStage = detectStage(mediumStats);
+  const selectedStage = shortList.length >= 3 && recentStage.stage !== 'Insufficient data'
+    ? recentStage
+    : mediumStage;
   const outliers = detectOutliers(mediumList);
   let outlierHypothesis = null;
   const totalOut = (outliers.durationOutliers.length || 0) + (outliers.intervalOutliers.length || 0);
@@ -151,8 +160,8 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
     mediumList,
     shortStats,
     mediumStats,
-    stage: mediumStage.stage || 'Unclear',
-    stageReason: mediumStage.reason || null,
+    stage: selectedStage.stage || 'Unclear',
+    stageReason: selectedStage.reason || null,
     outliers,
     outlierHypothesis,
   };

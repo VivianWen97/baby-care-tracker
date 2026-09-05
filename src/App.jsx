@@ -348,14 +348,14 @@ export default function App() {
       try {
         const v = localStorage.getItem(key);
         return v ? parseInt(v, 10) : 0;
-      } catch (e) {
+      } catch {
         return 0;
       }
     };
     const setLast = (key, ts) => {
       try {
         localStorage.setItem(key, String(ts));
-      } catch (e) {}
+      } catch {}
     };
 
     // Active hospital alert: short window criteria
@@ -363,10 +363,10 @@ export default function App() {
     const lastHosp = getLast('last_hospital_alert') || 0;
     let hospitalAlertDetected = lastHosp > 0;
     if (s && s.count >= 3) {
-      const isActiveMean = s.meanDuration && s.meanInterval && s.meanDuration >= 45 && s.meanDuration <= 60 && s.meanInterval >= 180 && s.meanInterval <= 300;
+      const isActiveEwma = s.ewmaDuration && s.ewmaInterval && s.ewmaDuration >= 45 && s.ewmaDuration <= 60 && s.ewmaInterval >= 180 && s.ewmaInterval <= 300;
       const consistent = s.cvIntervals !== null ? s.cvIntervals < 0.35 : true;
       const hospCooldown = 60 * 60 * 1000; // 1 hour
-      if (isActiveMean && consistent && now - lastHosp > hospCooldown) {
+      if (isActiveEwma && consistent && now - lastHosp > hospCooldown) {
         hospitalAlertDetected = true;
         showAlert('宫缩进入活跃期且持续,可以前往医院。');
         setLast('last_hospital_alert', now);
@@ -385,7 +385,7 @@ export default function App() {
     }
 
     // Epidural tip is only available after a hospital alert has been detected and when approx 4 minutes apart.
-    if (hospitalAlertDetected && s && s.meanInterval && s.meanInterval <= 240 && s.count >= 2) {
+    if (hospitalAlertDetected && s && s.ewmaInterval && s.ewmaInterval <= 240 && s.count >= 2) {
       const lastEpi = getLast('last_epidural_tip') || 0;
       const epiCooldown = 6 * 60 * 60 * 1000; // 6 hours
       if (now - lastEpi > epiCooldown) {
