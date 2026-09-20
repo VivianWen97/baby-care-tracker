@@ -112,7 +112,7 @@ export function analyzeContractions(logs, now = Date.now(), opts = {}) {
   const detectOutliers = (arr) => {
     if (!arr || arr.length === 0) return { durationOutliers: [], intervalOutliers: [] };
     const durations = arr.map((a) => a.duration);
-    const starts = arr.map((a) => a.start);c
+    const starts = arr.map((a) => a.start);
     const intervals = starts.slice(1).map((s, i) => Math.round((s - starts[i]) / 1000));
     const meanDur = mean(durations);
     const sdDur = stddev(durations);
