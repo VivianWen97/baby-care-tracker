@@ -20,21 +20,43 @@ const PEE_COLOR_OPTIONS = [
   { value: 'light_yellow', label: '浅黄色', color: '#FEF3C7' },
   { value: 'dark_yellow', label: '深黄色', color: '#D97706' },
   { value: 'pink', label: '粉红色', color: '#F9A8D4' },
-  { value: 'brown', label: '棕色', color: '#92400E' },
+  { value: 'brown', label: '棕色', color: '#72330d' },
   { value: 'red', label: '红色', color: '#DC2626' },
 ];
 
 const PEE_COLOR_TIPS = {
-  dark_yellow: '深黄色尿液可能是脱水的表现。若尿色持续偏深、湿尿布明显减少，或宝宝喂养困难/精神状态异常，请立即联系孩子的医疗服务提供者。',
-  pink: '粉红色尿液可能是血尿或其他问题的表现。请立即联系孩子的医疗服务提供者，获取专业建议。',
-  brown: '棕色尿液可能是血尿或其他问题的表现。请立即联系孩子的医疗服务提供者，获取专业建议。',
-  red: '红色尿液可能是血尿或其他问题的表现。请立即联系孩子的医疗服务提供者，获取专业建议。',
+  dark_yellow: '深黄色尿液可能是脱水的表现，确保宝宝摄入足够的液体，并观察是否有其他异常症状。',
+  pink: '粉红色尿液可能是血尿或其他问题的表现。请立即联系儿科医生，获取专业建议。',
+  brown: '棕色尿液可能是血尿或其他问题的表现。请立即联系儿科医生，获取专业建议。',
+  red: '红色尿液可能是血尿或其他问题的表现。请立即联系儿科医生，获取专业建议。',
 };
+
+const POO_COLOR_OPTIONS = [
+  { value: 'black', label: '黑色', color: '#181305' },
+  { value: 'green', label: '绿色', color: '#518010' },
+  { value: 'brown', label: '棕色', color: '#72330d' },
+  { value: 'yellow', label: '黄色', color: '#FACC15' },
+  { value: 'grey', label: '灰色', color: '#d7d8c3' },
+  { value: 'pink', label: '粉红色', color: '#F9A8D4' },
+];
+
+const POO_COLOR_TIPS = {
+  grey: '灰色或灰白色大便可能提示胆汁或肝脏相关问题。请立即联系儿科医生，获取专业建议。',
+  pink: '粉红色大便可能含有血液。请立即联系儿科医生，获取专业建议。',
+};
+
+const POO_TEXTURE_OPTIONS = [
+  { value: 'watery', label: '水样' },
+  { value: 'loose', label: '稀软' },
+  { value: 'pasty', label: '糊状' },
+  { value: 'seedy', label: '颗粒状' },
+  { value: 'formed', label: '成形' },
+  { value: 'hard', label: '干硬' },
+];
 
 const POO_SYMPTOM_OPTIONS = [
   '大便呈白色或灰白色',
   '大便带血或呈红色',
-  '黑色大便（非出生后的胎便）',
   '水样便或腹泻',
   '黏液较多',
   '大便干硬或排便费力',
@@ -506,11 +528,18 @@ export default function App() {
   const [diaperType, setDiaperType] = useState('pee');
   const [diaperNote, setDiaperNote] = useState('');
   const [peeColor, setPeeColor] = useState('');
+  const [pooColor, setPooColor] = useState('');
+  const [pooTexture, setPooTexture] = useState('');
   const [pooSymptoms, setPooSymptoms] = useState([]);
 
   const selectPeeColor = (color) => {
     setPeeColor(color);
     if (PEE_COLOR_TIPS[color]) showAlert(PEE_COLOR_TIPS[color]);
+  };
+
+  const selectPooColor = (color) => {
+    setPooColor(color);
+    if (POO_COLOR_TIPS[color]) showAlert(POO_COLOR_TIPS[color]);
   };
 
   const toggleDiaperSymptom = (symptom, setSelectedSymptoms) => {
@@ -525,6 +554,12 @@ export default function App() {
       ...(diaperType === 'pee' || diaperType === 'both'
         ? [PEE_COLOR_OPTIONS.find((option) => option.value === peeColor)?.label].filter(Boolean).map((color) => `尿色：${color}`)
         : []),
+      ...(diaperType === 'poo' || diaperType === 'both'
+        ? [POO_COLOR_OPTIONS.find((option) => option.value === pooColor)?.label].filter(Boolean).map((color) => `便便颜色：${color}`)
+        : []),
+      ...(diaperType === 'poo' || diaperType === 'both'
+        ? [POO_TEXTURE_OPTIONS.find((option) => option.value === pooTexture)?.label].filter(Boolean).map((texture) => `便便质地：${texture}`)
+        : []),
       ...(diaperType === 'poo' || diaperType === 'both' ? pooSymptoms : []),
     ];
     const newLog = {
@@ -536,6 +571,8 @@ export default function App() {
         diaperNote ? `备注：${diaperNote}` : '',
       ].filter(Boolean).join('；'),
       peeColor: diaperType === 'pee' || diaperType === 'both' ? peeColor : '',
+      pooColor: diaperType === 'poo' || diaperType === 'both' ? pooColor : '',
+      pooTexture: diaperType === 'poo' || diaperType === 'both' ? pooTexture : '',
       pooSymptoms: diaperType === 'poo' || diaperType === 'both' ? pooSymptoms : [],
       dateKey: getLocalDateKey(),
       timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
@@ -543,6 +580,8 @@ export default function App() {
     updateLogs([newLog, ...logs]);
     setDiaperNote('');
     setPeeColor('');
+    setPooColor('');
+    setPooTexture('');
     setPooSymptoms([]);
     showAlert('已记录换尿裤！');
   };
@@ -1094,11 +1133,10 @@ export default function App() {
                 保存出生信息后，这里会从宝宝出生月份开始显示尿裤日历。
               </div>
             )}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {[
                 { id: 'pee', label: '💧 小便' },
                 { id: 'poo', label: '💩 大便' },
-                { id: 'both', label: '✨ 混合' },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -1140,37 +1178,68 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800">
+                  <strong>需要立即联系儿科医生：</strong>尿液呈粉红色、红色或棕色，或疑似带血。深黄色尿液可能提示脱水；若同时湿尿布明显减少、宝宝喂养困难或精神状态异常，也请立即联系儿科医生。
+                </p>
               </div>
             )}
 
             {(diaperType === 'poo' || diaperType === 'both') && (
               <div>
-                <div className="text-xs text-slate-500 mb-2">大便观察（可多选）</div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {POO_SYMPTOM_OPTIONS.map((symptom) => (
-                    <label key={symptom} className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={pooSymptoms.includes(symptom)}
-                        onChange={() => toggleDiaperSymptom(symptom, setPooSymptoms)}
-                        className="mt-0.5 accent-green-300"
+                <div className="text-xs text-slate-500 mb-2">大便颜色（点选最接近的颜色）</div>
+                <div className="mb-4 flex flex-wrap gap-3" role="group" aria-label="大便颜色">
+                  {POO_COLOR_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-label={option.label}
+                      title={option.label}
+                      aria-pressed={pooColor === option.value}
+                      onClick={() => selectPooColor(option.value)}
+                      className={`flex h-12 w-12 items-center justify-center rounded-full border transition-colors ${
+                        pooColor === option.value
+                          ? 'border-green-700 ring-4 ring-green-200'
+                          : 'border-slate-300 hover:ring-2 hover:ring-slate-200'
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-8 w-8 rounded-full border border-black/10 shadow-inner"
+                        style={{ backgroundColor: option.color }}
                       />
-                      <span>{symptom}</span>
-                    </label>
+                    </button>
                   ))}
                 </div>
+                
+                <div className="text-xs text-slate-500 mb-2">大便质地（可选）</div>
+                <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label="大便质地">
+                  {POO_TEXTURE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={pooTexture === option.value}
+                      onClick={() => setPooTexture((currentTexture) => currentTexture === option.value ? '' : option.value)}
+                      className={`rounded-xl border p-3 text-sm transition-colors ${
+                        pooTexture === option.value
+                          ? 'border-green-500 bg-green-50 font-bold text-green-800'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800">
+                  <strong>需要立即联系儿科医生：</strong>大便呈灰色/灰白色、粉红色/红色，或发现血液。若宝宝看起来明显不适，也请及时联系医疗服务提供者。
+                </p>
               </div>
             )}
 
-            <p className="text-xs leading-5 text-amber-700">
-              若大便带血或呈白色/灰白色，请及时联系儿科医生。
-            </p>
-
             <div>
-              <label className="text-xs text-slate-500 mb-1 block">补充备注（可选）</label>
+              <label className="text-xs text-slate-500 mb-1 block">补充备注</label>
               <input
                 type="text"
-                placeholder="例如：尿布湿润情况、便便颜色或其他观察"
+                placeholder="例如：宝宝今天有点闹，可能是肠绞痛"
                 value={diaperNote}
                 onChange={(e) => setDiaperNote(e.target.value)}
                 className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300"
