@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
 import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell, Users, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import analyzeContractions, { getContractionChartRange } from './lib/contractionStats';
-import { buildDailySummary } from './lib/calendarUtils';
+import { buildDailySummary, buildDiaperIntervalSummary } from './lib/calendarUtils';
 import { db } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -127,6 +127,12 @@ export default function App() {
   const [birthStats, setBirthStats] = useState(EMPTY_BIRTH_STATS);
   const [birthStatsOpen, setBirthStatsOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Listen to Firebase updates in real time whenever roomCode changes
   useEffect(() => {
@@ -562,9 +568,11 @@ export default function App() {
         : []),
       ...(diaperType === 'poo' || diaperType === 'both' ? pooSymptoms : []),
     ];
+    const eventTimestamp = Date.now();
     const newLog = {
-      id: Date.now(),
+      id: eventTimestamp,
       type: 'diaper',
+      diaperType,
       detail: [
         labels[diaperType],
         selectedSymptoms.length ? `观察：${selectedSymptoms.join('、')}` : '',
@@ -575,8 +583,10 @@ export default function App() {
       pooTexture: diaperType === 'poo' || diaperType === 'both' ? pooTexture : '',
       pooSymptoms: diaperType === 'poo' || diaperType === 'both' ? pooSymptoms : [],
       dateKey: getLocalDateKey(),
-      timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
+      timestampMs: eventTimestamp,
+      timestamp: new Date(eventTimestamp).toLocaleString('en-US', {timeZone: NEW_YORK_TIME_ZONE}),
     };
+    setCurrentTime(eventTimestamp);
     updateLogs([newLog, ...logs]);
     setDiaperNote('');
     setPeeColor('');
@@ -617,6 +627,13 @@ export default function App() {
     }, {}), [logs]);
 
   const diaperSummaryByDay = useMemo(() => buildDailySummary(logs, 'diaper'), [logs]);
+  const birthTimestamp = birthStats.birthDate && birthStats.birthTime
+    ? Date.parse(`${birthStats.birthDate}T${birthStats.birthTime}`)
+    : null;
+  const diaperIntervalsSinceBirth = useMemo(
+    () => buildDiaperIntervalSummary(logs, birthTimestamp, currentTime),
+    [logs, birthTimestamp, currentTime],
+  );
 
   const calendarDays = useMemo(
     () => calendarMonth ? getCalendarDays(calendarMonth) : [],
@@ -1252,6 +1269,41 @@ export default function App() {
             >
               <Plus size={18} /> 保存排便记录
             </button>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label="出生后尿布统计">
+              <h3 className="font-bold text-slate-800">尿布统计</h3>
+              <p className="mt-1 text-xs text-slate-500">从宝宝出生时间开始每24小时计数</p>
+              {!Number.isFinite(birthTimestamp) ? (
+                <p className="mt-3 text-sm text-slate-500">请先填写宝宝的出生日期和时间。</p>
+              ) : currentTime < birthTimestamp ? (
+                <p className="mt-3 text-sm text-slate-500">宝宝的出生时间尚未到。</p>
+              ) : (
+                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                  {diaperIntervalsSinceBirth.map((interval) => {
+                    const isCurrentInterval = interval.index === Math.floor((currentTime - birthTimestamp) / (24 * 60 * 60 * 1000));
+                    return (
+                      <div
+                        key={interval.index}
+                        aria-current={isCurrentInterval ? 'step' : undefined}
+                        className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-sm ${
+                          isCurrentInterval
+                            ? 'border-green-400 bg-green-100 shadow-sm ring-2 ring-green-200'
+                            : 'border-transparent bg-white'
+                        }`}
+                      >
+                        <div className={`font-medium ${isCurrentInterval ? 'text-green-900' : 'text-slate-700'}`}>
+                          第 {interval.index + 1} 个24小时
+                        </div>
+                        <div className={`flex gap-3 whitespace-nowrap text-xs ${isCurrentInterval ? 'font-semibold text-green-900' : 'text-slate-600'}`}>
+                          <span>💧 小便 {interval.pee} 次</span>
+                          <span>💩 大便 {interval.poo} 次</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </div>
         )}
 
