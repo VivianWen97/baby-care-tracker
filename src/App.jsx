@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
 import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell, Users, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import analyzeContractions, { getContractionChartRange } from './lib/contractionStats';
+import { buildDailySummary, buildDiaperIntervalSummary } from './lib/calendarUtils';
 import { db } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -14,6 +15,53 @@ const EMPTY_BIRTH_STATS = {
   issues: [],
   condition: '',
 };
+
+const PEE_COLOR_OPTIONS = [
+  { value: 'light_yellow', label: '浅黄色', color: '#FEF3C7' },
+  { value: 'dark_yellow', label: '深黄色', color: '#D97706' },
+  { value: 'pink', label: '粉红色', color: '#F9A8D4' },
+  { value: 'brown', label: '棕色', color: '#72330d' },
+  { value: 'red', label: '红色', color: '#DC2626' },
+];
+
+const PEE_COLOR_TIPS = {
+  dark_yellow: '深黄色尿液可能是脱水的表现，确保宝宝摄入足够的液体，并观察是否有其他异常症状。',
+  pink: '粉红色尿液可能是血尿或其他问题的表现。请立即联系儿科医生，获取专业建议。',
+  brown: '棕色尿液可能是血尿或其他问题的表现。请立即联系儿科医生，获取专业建议。',
+  red: '红色尿液可能是血尿或其他问题的表现。请立即联系儿科医生，获取专业建议。',
+};
+
+const POO_COLOR_OPTIONS = [
+  { value: 'black', label: '黑色', color: '#181305' },
+  { value: 'green', label: '绿色', color: '#518010' },
+  { value: 'brown', label: '棕色', color: '#72330d' },
+  { value: 'yellow', label: '黄色', color: '#FACC15' },
+  { value: 'grey', label: '灰色', color: '#d7d8c3' },
+  { value: 'pink', label: '粉红色', color: '#F9A8D4' },
+];
+
+const POO_COLOR_TIPS = {
+  grey: '灰色或灰白色大便可能提示胆汁或肝脏相关问题。请立即联系儿科医生，获取专业建议。',
+  pink: '粉红色大便可能含有血液。请立即联系儿科医生，获取专业建议。',
+};
+
+const POO_TEXTURE_OPTIONS = [
+  { value: 'watery', label: '水样' },
+  { value: 'loose', label: '稀软' },
+  { value: 'pasty', label: '糊状' },
+  { value: 'seedy', label: '颗粒状' },
+  { value: 'formed', label: '成形' },
+  { value: 'hard', label: '干硬' },
+];
+
+const POO_SYMPTOM_OPTIONS = [
+  '大便呈白色或灰白色',
+  '大便带血或呈红色',
+  '水样便或腹泻',
+  '黏液较多',
+  '大便干硬或排便费力',
+  '其他大便异常',
+];
 
 function calculateGestationalAge(dueDate, birthDate) {
   if (!dueDate || !birthDate) return null;
@@ -79,6 +127,12 @@ export default function App() {
   const [birthStats, setBirthStats] = useState(EMPTY_BIRTH_STATS);
   const [birthStatsOpen, setBirthStatsOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Listen to Firebase updates in real time whenever roomCode changes
   useEffect(() => {
@@ -479,17 +533,66 @@ export default function App() {
   // Diaper Tracker
   const [diaperType, setDiaperType] = useState('pee');
   const [diaperNote, setDiaperNote] = useState('');
+  const [peeColor, setPeeColor] = useState('');
+  const [pooColor, setPooColor] = useState('');
+  const [pooTexture, setPooTexture] = useState('');
+  const [pooSymptoms, setPooSymptoms] = useState([]);
+
+  const selectPeeColor = (color) => {
+    setPeeColor(color);
+    if (PEE_COLOR_TIPS[color]) showAlert(PEE_COLOR_TIPS[color]);
+  };
+
+  const selectPooColor = (color) => {
+    setPooColor(color);
+    if (POO_COLOR_TIPS[color]) showAlert(POO_COLOR_TIPS[color]);
+  };
+
+  const toggleDiaperSymptom = (symptom, setSelectedSymptoms) => {
+    setSelectedSymptoms((currentSymptoms) => currentSymptoms.includes(symptom)
+      ? currentSymptoms.filter((item) => item !== symptom)
+      : [...currentSymptoms, symptom]);
+  };
 
   const addDiaperLog = () => {
     const labels = { pee: '小便', poo: '大便', both: '小便+大便' };
+    const selectedSymptoms = [
+      ...(diaperType === 'pee' || diaperType === 'both'
+        ? [PEE_COLOR_OPTIONS.find((option) => option.value === peeColor)?.label].filter(Boolean).map((color) => `尿色：${color}`)
+        : []),
+      ...(diaperType === 'poo' || diaperType === 'both'
+        ? [POO_COLOR_OPTIONS.find((option) => option.value === pooColor)?.label].filter(Boolean).map((color) => `便便颜色：${color}`)
+        : []),
+      ...(diaperType === 'poo' || diaperType === 'both'
+        ? [POO_TEXTURE_OPTIONS.find((option) => option.value === pooTexture)?.label].filter(Boolean).map((texture) => `便便质地：${texture}`)
+        : []),
+      ...(diaperType === 'poo' || diaperType === 'both' ? pooSymptoms : []),
+    ];
+    const eventTimestamp = Date.now();
     const newLog = {
-      id: Date.now(),
+      id: eventTimestamp,
       type: 'diaper',
-      detail: labels[diaperType] + (diaperNote ? ` (${diaperNote})` : ''),
-      timestamp: new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}),
+      diaperType,
+      detail: [
+        labels[diaperType],
+        selectedSymptoms.length ? `观察：${selectedSymptoms.join('、')}` : '',
+        diaperNote ? `备注：${diaperNote}` : '',
+      ].filter(Boolean).join('；'),
+      peeColor: diaperType === 'pee' || diaperType === 'both' ? peeColor : '',
+      pooColor: diaperType === 'poo' || diaperType === 'both' ? pooColor : '',
+      pooTexture: diaperType === 'poo' || diaperType === 'both' ? pooTexture : '',
+      pooSymptoms: diaperType === 'poo' || diaperType === 'both' ? pooSymptoms : [],
+      dateKey: getLocalDateKey(),
+      timestampMs: eventTimestamp,
+      timestamp: new Date(eventTimestamp).toLocaleString('en-US', {timeZone: NEW_YORK_TIME_ZONE}),
     };
+    setCurrentTime(eventTimestamp);
     updateLogs([newLog, ...logs]);
     setDiaperNote('');
+    setPeeColor('');
+    setPooColor('');
+    setPooTexture('');
+    setPooSymptoms([]);
     showAlert('已记录换尿裤！');
   };
 
@@ -522,6 +625,15 @@ export default function App() {
       summary[dateKey].details.push(log.detail);
       return summary;
     }, {}), [logs]);
+
+  const diaperSummaryByDay = useMemo(() => buildDailySummary(logs, 'diaper'), [logs]);
+  const birthTimestamp = birthStats.birthDate && birthStats.birthTime
+    ? Date.parse(`${birthStats.birthDate}T${birthStats.birthTime}`)
+    : null;
+  const diaperIntervalsSinceBirth = useMemo(
+    () => buildDiaperIntervalSummary(logs, birthTimestamp, currentTime),
+    [logs, birthTimestamp, currentTime],
+  );
 
   const calendarDays = useMemo(
     () => calendarMonth ? getCalendarDays(calendarMonth) : [],
@@ -981,11 +1093,67 @@ export default function App() {
         {activeTab === 'diaper' && (
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
             <h2 className="text-lg font-bold text-slate-800 mb-2">换尿裤/排便记录</h2>
-            <div className="grid grid-cols-3 gap-2">
+            {calendarMonth ? (
+              <section className="rounded-2xl border border-green-100 bg-green-50/40 p-3" aria-label="尿裤日历">
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    type="button"
+                    aria-label="上一个月"
+                    onClick={() => setCalendarMonth(new Date(Date.UTC(calendarMonth.getUTCFullYear(), calendarMonth.getUTCMonth() - 1, 1)))}
+                    className="p-2 rounded-full text-slate-500 hover:bg-white"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div className="flex items-center gap-2 font-bold text-slate-700">
+                    <CalendarDays size={17} className="text-green-500" />
+                    {formatCalendarMonth(calendarMonth)}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="下一个月"
+                    onClick={() => setCalendarMonth(new Date(Date.UTC(calendarMonth.getUTCFullYear(), calendarMonth.getUTCMonth() + 1, 1)))}
+                    className="p-2 rounded-full text-slate-500 hover:bg-white"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-slate-400 mb-1">
+                  {['日', '一', '二', '三', '四', '五', '六'].map((day) => <span key={day}>{day}</span>)}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarDays.map((day, index) => {
+                    if (!day) return <span key={`empty-${index}`} className="min-h-14" />;
+                    const dateKey = day.toISOString().slice(0, 10);
+                    const summary = diaperSummaryByDay[dateKey];
+                    const isBirthday = dateKey === birthStats.birthDate;
+                    return (
+                      <div
+                        key={dateKey}
+                        className={`min-h-14 rounded-lg p-1 text-left ${isBirthday ? 'bg-amber-50 border border-amber-300' : summary ? 'bg-white border border-green-200' : 'bg-white/50'}`}
+                        title={summary?.details.join('、')}
+                      >
+                        <div className={`text-xs font-bold ${isBirthday ? 'text-amber-700' : summary ? 'text-green-700' : 'text-slate-500'}`}>
+                          {day.getUTCDate()}{isBirthday && ' 🎂'}
+                        </div>
+                        {summary && (
+                          <div className="mt-1 text-[10px] leading-3 text-slate-600">
+                            <div>🪰 {summary.count} 次</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              <div className="rounded-xl bg-slate-50 p-3 text-center text-xs text-slate-400">
+                保存出生信息后，这里会从宝宝出生月份开始显示尿裤日历。
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
               {[
                 { id: 'pee', label: '💧 小便' },
                 { id: 'poo', label: '💩 大便' },
-                { id: 'both', label: '✨ 混合' },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -1001,11 +1169,94 @@ export default function App() {
               ))}
             </div>
 
+            {(diaperType === 'pee' || diaperType === 'both') && (
+              <div>
+                <div className="text-xs text-slate-500 mb-2">尿液颜色（点选最接近的颜色）</div>
+                <div className="flex flex-wrap gap-3" role="group" aria-label="尿液颜色">
+                  {PEE_COLOR_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-label={option.label}
+                      title={option.label}
+                      aria-pressed={peeColor === option.value}
+                      onClick={() => selectPeeColor(option.value)}
+                      className={`flex h-12 w-12 items-center justify-center rounded-full border transition-colors ${
+                        peeColor === option.value
+                          ? 'border-green-700 ring-4 ring-green-200'
+                          : 'border-slate-300 hover:ring-2 hover:ring-slate-200'
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-8 w-8 rounded-full border border-black/10 shadow-inner"
+                        style={{ backgroundColor: option.color }}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-500">
+                  <strong className="font-semibold text-slate-700">需要立即联系儿科医生：</strong>尿液呈粉红色、红色或棕色，或疑似带血。深黄色尿液可能提示脱水；若同时湿尿布明显减少、宝宝喂养困难或精神状态异常，也请立即联系儿科医生。
+                </p>
+              </div>
+            )}
+
+            {(diaperType === 'poo' || diaperType === 'both') && (
+              <div>
+                <div className="text-xs text-slate-500 mb-2">大便颜色（点选最接近的颜色）</div>
+                <div className="mb-4 flex flex-wrap gap-3" role="group" aria-label="大便颜色">
+                  {POO_COLOR_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-label={option.label}
+                      title={option.label}
+                      aria-pressed={pooColor === option.value}
+                      onClick={() => selectPooColor(option.value)}
+                      className={`flex h-12 w-12 items-center justify-center rounded-full border transition-colors ${
+                        pooColor === option.value
+                          ? 'border-green-700 ring-4 ring-green-200'
+                          : 'border-slate-300 hover:ring-2 hover:ring-slate-200'
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-8 w-8 rounded-full border border-black/10 shadow-inner"
+                        style={{ backgroundColor: option.color }}
+                      />
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="text-xs text-slate-500 mb-2">大便质地（可选）</div>
+                <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label="大便质地">
+                  {POO_TEXTURE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={pooTexture === option.value}
+                      onClick={() => setPooTexture((currentTexture) => currentTexture === option.value ? '' : option.value)}
+                      className={`rounded-xl border p-3 text-sm transition-colors ${
+                        pooTexture === option.value
+                          ? 'border-green-500 bg-green-50 font-bold text-green-800'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mb-4 text-xs leading-5 text-slate-500">
+                  <strong className="font-semibold text-slate-700">需要立即联系儿科医生：</strong>大便呈灰色/灰白色、粉红色/红色，或发现血液。若宝宝看起来明显不适，也请及时联系医疗服务提供者。
+                </p>
+              </div>
+            )}
+
             <div>
-              <label className="text-xs text-slate-500 mb-1 block">备注 (颜色/形状/异常情况)</label>
+              <label className="text-xs text-slate-500 mb-1 block">补充备注</label>
               <input
                 type="text"
-                placeholder="例如：黄色糊状"
+                placeholder="例如：宝宝今天有点闹，可能是肠绞痛"
                 value={diaperNote}
                 onChange={(e) => setDiaperNote(e.target.value)}
                 className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300"
@@ -1018,6 +1269,41 @@ export default function App() {
             >
               <Plus size={18} /> 保存排便记录
             </button>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label="出生后尿布统计">
+              <h3 className="font-bold text-slate-800">尿布统计</h3>
+              <p className="mt-1 text-xs text-slate-500">从宝宝出生时间开始每24小时计数</p>
+              {!Number.isFinite(birthTimestamp) ? (
+                <p className="mt-3 text-sm text-slate-500">请先填写宝宝的出生日期和时间。</p>
+              ) : currentTime < birthTimestamp ? (
+                <p className="mt-3 text-sm text-slate-500">宝宝的出生时间尚未到。</p>
+              ) : (
+                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                  {diaperIntervalsSinceBirth.map((interval) => {
+                    const isCurrentInterval = interval.index === Math.floor((currentTime - birthTimestamp) / (24 * 60 * 60 * 1000));
+                    return (
+                      <div
+                        key={interval.index}
+                        aria-current={isCurrentInterval ? 'step' : undefined}
+                        className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-sm ${
+                          isCurrentInterval
+                            ? 'border-green-400 bg-green-100 shadow-sm ring-2 ring-green-200'
+                            : 'border-transparent bg-white'
+                        }`}
+                      >
+                        <div className={`font-medium ${isCurrentInterval ? 'text-green-900' : 'text-slate-700'}`}>
+                          第 {interval.index + 1} 个24小时
+                        </div>
+                        <div className={`flex gap-3 whitespace-nowrap text-xs ${isCurrentInterval ? 'font-semibold text-green-900' : 'text-slate-600'}`}>
+                          <span>💧 小便 {interval.pee} 次</span>
+                          <span>💩 大便 {interval.poo} 次</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </div>
         )}
 
