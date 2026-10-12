@@ -1195,8 +1195,8 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800">
-                  <strong>需要立即联系儿科医生：</strong>尿液呈粉红色、红色或棕色，或疑似带血。深黄色尿液可能提示脱水；若同时湿尿布明显减少、宝宝喂养困难或精神状态异常，也请立即联系儿科医生。
+                <p className="mt-3 text-xs leading-5 text-slate-500">
+                  <strong className="font-semibold text-slate-700">需要立即联系儿科医生：</strong>尿液呈粉红色、红色或棕色，或疑似带血。深黄色尿液可能提示脱水；若同时湿尿布明显减少、宝宝喂养困难或精神状态异常，也请立即联系儿科医生。
                 </p>
               </div>
             )}
@@ -1246,8 +1246,8 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800">
-                  <strong>需要立即联系儿科医生：</strong>大便呈灰色/灰白色、粉红色/红色，或发现血液。若宝宝看起来明显不适，也请及时联系医疗服务提供者。
+                <p className="mb-4 text-xs leading-5 text-slate-500">
+                  <strong className="font-semibold text-slate-700">需要立即联系儿科医生：</strong>大便呈灰色/灰白色、粉红色/红色，或发现血液。若宝宝看起来明显不适，也请及时联系医疗服务提供者。
                 </p>
               </div>
             )}
