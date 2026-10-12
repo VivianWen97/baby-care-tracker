@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
 import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell, Users, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import analyzeContractions, { getContractionChartRange } from './lib/contractionStats';
-import { buildDailySummary, buildDiaperIntervalSummary } from './lib/calendarUtils';
+import { buildDailySummary, buildDiaperIntervalSummary, buildFeedingIntervalSummary } from './lib/calendarUtils';
 import { db } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -517,14 +517,17 @@ export default function App() {
       pump_bottle: '母乳瓶喂',
       formula_bottle: '配方奶/水奶',
     };
+    const eventTimestamp = Date.now();
     const newLog = {
-      id: Date.now(),
+      id: eventTimestamp,
       type: 'feeding',
       detail: feedTypes.map((type) => `${feedLabels[type]}${includesBottle && (type === 'formula_bottle' || type === 'pump_bottle') ? ` ${feedAmount} ml` : ''}`).join('、'),
       amount: includesBottle ? Number(feedAmount) : null,
       dateKey: getLocalDateKey(),
-      timestamp: new Date().toLocaleString('en-US', {timeZone: NEW_YORK_TIME_ZONE}),
+      timestampMs: eventTimestamp,
+      timestamp: new Date(eventTimestamp).toLocaleString('en-US', {timeZone: NEW_YORK_TIME_ZONE}),
     };
+    setCurrentTime(eventTimestamp);
     updateLogs([newLog, ...logs]);
     setFeedAmount('');
     showAlert('已记录喂奶！');
@@ -630,6 +633,10 @@ export default function App() {
   const birthTimestamp = birthStats.birthDate && birthStats.birthTime
     ? Date.parse(`${birthStats.birthDate}T${birthStats.birthTime}`)
     : null;
+  const feedingIntervalsSinceBirth = useMemo(
+    () => buildFeedingIntervalSummary(logs, birthTimestamp, currentTime),
+    [logs, birthTimestamp, currentTime],
+  );
   const diaperIntervalsSinceBirth = useMemo(
     () => buildDiaperIntervalSummary(logs, birthTimestamp, currentTime),
     [logs, birthTimestamp, currentTime],
@@ -1087,6 +1094,41 @@ export default function App() {
             >
               <Plus size={18} /> 保存喂奶记录
             </button>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label="出生后喂奶统计">
+              <h3 className="font-bold text-slate-800">喂奶统计</h3>
+              <p className="mt-1 text-xs text-slate-500">从宝宝出生时间开始每24小时计数</p>
+              {!Number.isFinite(birthTimestamp) ? (
+                <p className="mt-3 text-sm text-slate-500">请先填写宝宝的出生日期和时间。</p>
+              ) : currentTime < birthTimestamp ? (
+                <p className="mt-3 text-sm text-slate-500">宝宝的出生时间尚未到。</p>
+              ) : (
+                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                  {feedingIntervalsSinceBirth.map((interval) => {
+                    const isCurrentInterval = interval.index === Math.floor((currentTime - birthTimestamp) / (24 * 60 * 60 * 1000));
+                    return (
+                      <div
+                        key={interval.index}
+                        aria-current={isCurrentInterval ? 'step' : undefined}
+                        className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-sm ${
+                          isCurrentInterval
+                            ? 'border-green-400 bg-green-100 shadow-sm ring-2 ring-green-200'
+                            : 'border-transparent bg-white'
+                        }`}
+                      >
+                        <div className={`font-medium ${isCurrentInterval ? 'text-green-900' : 'text-slate-700'}`}>
+                          第 {interval.index + 1} 个24小时
+                        </div>
+                        <div className={`flex gap-3 whitespace-nowrap text-xs ${isCurrentInterval ? 'font-semibold text-green-900' : 'text-slate-600'}`}>
+                          <span>🍼 喂奶 {interval.count} 次</span>
+                          {interval.amount > 0 && <span>奶量 {interval.amount} ml</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </div>
         )}
 

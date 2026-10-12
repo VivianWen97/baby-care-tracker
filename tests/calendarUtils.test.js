@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDailySummary, buildDiaperIntervalSummary } from '../src/lib/calendarUtils.js';
+import { buildDailySummary, buildDiaperIntervalSummary, buildFeedingIntervalSummary } from '../src/lib/calendarUtils.js';
 
 describe('calendarUtils', () => {
   it('groups diaper logs by local date and keeps their labels', () => {
@@ -31,6 +31,25 @@ describe('calendarUtils', () => {
       { index: 0, pee: 1, poo: 1 },
       { index: 1, pee: 1, poo: 1 },
       { index: 2, pee: 1, poo: 0 },
+    ]);
+  });
+
+  it('tallies feeding counts and bottle amounts in 24-hour windows from birth', () => {
+    const birthTimestamp = Date.UTC(2026, 8, 16, 8);
+    const day = 24 * 60 * 60 * 1000;
+    const logs = [
+      { type: 'feeding', id: birthTimestamp + 1_000, amount: 60 },
+      { type: 'feeding', timestampMs: birthTimestamp + day - 1, amount: null },
+      { type: 'feeding', timestampMs: birthTimestamp + day, amount: 90 },
+      { type: 'feeding', timestampMs: birthTimestamp + 2 * day + 1, amount: 30 },
+      { type: 'diaper', timestampMs: birthTimestamp + day, amount: 20 },
+      { type: 'feeding', timestampMs: birthTimestamp - 1, amount: 40 },
+    ];
+
+    expect(buildFeedingIntervalSummary(logs, birthTimestamp, birthTimestamp + 2 * day + 2)).toEqual([
+      { index: 0, count: 2, amount: 60 },
+      { index: 1, count: 1, amount: 90 },
+      { index: 2, count: 1, amount: 30 },
     ]);
   });
 });
