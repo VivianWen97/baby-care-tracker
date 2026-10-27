@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+.birth-date-time-input {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	font-size: 16px;
+}
+
 .sleep-range {
 	height: 8px;
 	border-radius: 9999px;

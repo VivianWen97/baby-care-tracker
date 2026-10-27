@@ -874,7 +874,7 @@ export default function App() {
               </button>
 
               {birthStatsOpen && (
-                <div id="birth-stats-form" className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-6">
+                <div id="birth-stats-form" className="box-border w-full min-w-0 overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-6">
                 <div className="mb-4">
                   <h2 className="text-lg font-bold text-slate-800">欢迎来到这个世界！</h2>
                   <p className="mt-1 text-xs text-slate-500">记录宝宝出生时的准确资料</p>
@@ -889,7 +889,7 @@ export default function App() {
                       type="date"
                       value={birthStats.birthDate}
                       onChange={(e) => setBirthStats({ ...birthStats, birthDate: e.target.value })}
-                      className="block w-full min-w-0 max-w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                      className="birth-date-time-input block w-full min-w-0 max-w-full box-border p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
                     />
                   </div>
                   <div className="min-w-0">
@@ -900,7 +900,7 @@ export default function App() {
                       step="1"
                       value={birthStats.birthTime}
                       onChange={(e) => setBirthStats({ ...birthStats, birthTime: e.target.value })}
-                      className="block w-full min-w-0 max-w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                      className="birth-date-time-input block w-full min-w-0 max-w-full box-border p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
                     />
                   </div>
                 </div>
