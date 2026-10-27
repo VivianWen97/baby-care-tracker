@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDailySummary, buildDiaperIntervalSummary, buildFeedingIntervalSummary } from '../src/lib/calendarUtils.js';
+import { buildDailySummary, buildDiaperIntervalSummary, buildFeedingIntervalSummary, buildSleepDailySummary } from '../src/lib/calendarUtils.js';
 
 describe('calendarUtils', () => {
   it('groups diaper logs by local date and keeps their labels', () => {
@@ -12,6 +12,20 @@ describe('calendarUtils', () => {
     expect(buildDailySummary(logs, 'diaper')).toEqual({
       '2026-09-16': { count: 2, details: ['小便', '大便'] },
       '2026-09-17': { count: 1, details: ['小便+大便'] },
+    });
+  });
+
+  it('groups sleep logs by date and sums approximate duration', () => {
+    const logs = [
+      { type: 'sleep', dateKey: '2026-09-16', durationMinutes: 90 },
+      { type: 'sleep', dateKey: '2026-09-16', durationMinutes: 45 },
+      { type: 'sleep', dateKey: '2026-09-17', durationMinutes: 120 },
+      { type: 'feeding', dateKey: '2026-09-16', durationMinutes: 30 },
+    ];
+
+    expect(buildSleepDailySummary(logs)).toEqual({
+      '2026-09-16': { count: 2, durationMinutes: 135 },
+      '2026-09-17': { count: 1, durationMinutes: 120 },
     });
   });
 
