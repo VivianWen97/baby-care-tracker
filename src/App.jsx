@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ApexCharts from 'apexcharts';
 import { Timer, Milk, Toilet, Moon, History, Trash2, Play, Square, Plus, Bell, Users, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import analyzeContractions, { getContractionChartRange } from './lib/contractionStats';
-import { buildDailySummary, buildDiaperIntervalSummary } from './lib/calendarUtils';
+import { buildDailySummary, buildDiaperIntervalSummary, buildFeedingIntervalSummary, buildSleepDailySummary } from './lib/calendarUtils';
 import { db } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -114,6 +114,19 @@ function getCalendarDays(monthDate) {
     if (index < leadingDays) return null;
     return new Date(Date.UTC(year, month, index - leadingDays + 1));
   });
+}
+
+function formatSleepDuration(durationMinutes) {
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+  if (hours === 0) return `${minutes} 分钟`;
+  return minutes === 0 ? `${hours} 小时` : `${hours} 小时 ${minutes} 分钟`;
+}
+
+function formatCompactSleepDuration(durationMinutes) {
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+  return `${hours > 0 ? `${hours}h` : ''}${minutes > 0 ? `${minutes}min` : ''}` || '0min';
 }
 
 export default function App() {
@@ -502,6 +515,9 @@ export default function App() {
   // Feeding Tracker
   const [feedTypes, setFeedTypes] = useState(['breast_left']);
   const [feedAmount, setFeedAmount] = useState('');
+  const [sleepDurationMinutes, setSleepDurationMinutes] = useState(15);
+  const [sleepHoursInput, setSleepHoursInput] = useState('0');
+  const [sleepMinutesInput, setSleepMinutesInput] = useState('15');
 
   const addFeedingLog = () => {
     if (feedTypes.length === 0) {
@@ -517,14 +533,17 @@ export default function App() {
       pump_bottle: '母乳瓶喂',
       formula_bottle: '配方奶/水奶',
     };
+    const eventTimestamp = Date.now();
     const newLog = {
-      id: Date.now(),
+      id: eventTimestamp,
       type: 'feeding',
       detail: feedTypes.map((type) => `${feedLabels[type]}${includesBottle && (type === 'formula_bottle' || type === 'pump_bottle') ? ` ${feedAmount} ml` : ''}`).join('、'),
       amount: includesBottle ? Number(feedAmount) : null,
       dateKey: getLocalDateKey(),
-      timestamp: new Date().toLocaleString('en-US', {timeZone: NEW_YORK_TIME_ZONE}),
+      timestampMs: eventTimestamp,
+      timestamp: new Date(eventTimestamp).toLocaleString('en-US', {timeZone: NEW_YORK_TIME_ZONE}),
     };
+    setCurrentTime(eventTimestamp);
     updateLogs([newLog, ...logs]);
     setFeedAmount('');
     showAlert('已记录喂奶！');
@@ -596,6 +615,43 @@ export default function App() {
     showAlert('已记录换尿裤！');
   };
 
+  const addSleepLog = () => {
+    const durationMinutes = Number(sleepDurationMinutes);
+    if (!Number.isFinite(durationMinutes) || durationMinutes < 15 || durationMinutes > 480 || durationMinutes % 15 !== 0) {
+      return showAlert('请选择 15 分钟到 8 小时之间的睡眠时长');
+    }
+
+    const eventTimestamp = Date.now();
+    const newLog = {
+      id: eventTimestamp,
+      type: 'sleep',
+      durationMinutes,
+      detail: `约睡眠 ${formatSleepDuration(durationMinutes)}`,
+      dateKey: getLocalDateKey(new Date(eventTimestamp)),
+      timestampMs: eventTimestamp,
+      timestamp: new Date(eventTimestamp).toLocaleString('en-US', { timeZone: NEW_YORK_TIME_ZONE }),
+    };
+    setCurrentTime(eventTimestamp);
+    updateLogs([newLog, ...logs]);
+    setSleepDurationMinutes(15);
+    setSleepHoursInput('0');
+    setSleepMinutesInput('15');
+    showAlert('已记录睡眠！');
+  };
+
+  const updateSleepDurationFromInputs = (hoursValue, minutesValue) => {
+    if (hoursValue === '' || minutesValue === '') return;
+    const totalMinutes = (Number(hoursValue) * 60) + Number(minutesValue);
+    if (!Number.isFinite(totalMinutes)) return;
+    const roundedMinutes = Math.min(480, Math.max(15, Math.round(totalMinutes / 15) * 15));
+    setSleepDurationMinutes(roundedMinutes);
+  };
+
+  const syncSleepDurationInputs = (durationMinutes) => {
+    setSleepHoursInput(String(Math.floor(durationMinutes / 60)));
+    setSleepMinutesInput(String(durationMinutes % 60));
+  };
+
   const deleteLog = (id) => {
     updateLogs(logs.filter((log) => log.id !== id));
   };
@@ -627,9 +683,14 @@ export default function App() {
     }, {}), [logs]);
 
   const diaperSummaryByDay = useMemo(() => buildDailySummary(logs, 'diaper'), [logs]);
+  const sleepSummaryByDay = useMemo(() => buildSleepDailySummary(logs), [logs]);
   const birthTimestamp = birthStats.birthDate && birthStats.birthTime
     ? Date.parse(`${birthStats.birthDate}T${birthStats.birthTime}`)
     : null;
+  const feedingIntervalsSinceBirth = useMemo(
+    () => buildFeedingIntervalSummary(logs, birthTimestamp, currentTime),
+    [logs, birthTimestamp, currentTime],
+  );
   const diaperIntervalsSinceBirth = useMemo(
     () => buildDiaperIntervalSummary(logs, birthTimestamp, currentTime),
     [logs, birthTimestamp, currentTime],
@@ -1087,6 +1148,41 @@ export default function App() {
             >
               <Plus size={18} /> 保存喂奶记录
             </button>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label="出生后喂奶统计">
+              <h3 className="font-bold text-slate-800">喂奶统计</h3>
+              <p className="mt-1 text-xs text-slate-500">从宝宝出生时间开始每24小时计数</p>
+              {!Number.isFinite(birthTimestamp) ? (
+                <p className="mt-3 text-sm text-slate-500">请先填写宝宝的出生日期和时间。</p>
+              ) : currentTime < birthTimestamp ? (
+                <p className="mt-3 text-sm text-slate-500">宝宝的出生时间尚未到。</p>
+              ) : (
+                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                  {feedingIntervalsSinceBirth.map((interval) => {
+                    const isCurrentInterval = interval.index === Math.floor((currentTime - birthTimestamp) / (24 * 60 * 60 * 1000));
+                    return (
+                      <div
+                        key={interval.index}
+                        aria-current={isCurrentInterval ? 'step' : undefined}
+                        className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-sm ${
+                          isCurrentInterval
+                            ? 'border-green-400 bg-green-100 shadow-sm ring-2 ring-green-200'
+                            : 'border-transparent bg-white'
+                        }`}
+                      >
+                        <div className={`font-medium ${isCurrentInterval ? 'text-green-900' : 'text-slate-700'}`}>
+                          第 {interval.index + 1} 个24小时
+                        </div>
+                        <div className={`flex gap-3 whitespace-nowrap text-xs ${isCurrentInterval ? 'font-semibold text-green-900' : 'text-slate-600'}`}>
+                          <span>🍼 喂奶 {interval.count} 次</span>
+                          {interval.amount > 0 && <span>奶量 {interval.amount} ml</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </div>
         )}
 
@@ -1307,6 +1403,156 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'sleep' && (
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+            <h2 className="text-lg font-bold text-slate-800 mb-2">睡眠记录</h2>
+            {calendarMonth ? (
+              <section className="rounded-2xl border border-green-100 bg-green-50/40 p-3" aria-label="睡眠日历">
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    type="button"
+                    aria-label="上一个月"
+                    onClick={() => setCalendarMonth(new Date(Date.UTC(calendarMonth.getUTCFullYear(), calendarMonth.getUTCMonth() - 1, 1)))}
+                    className="p-2 rounded-full text-slate-500 hover:bg-white"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div className="flex items-center gap-2 font-bold text-slate-700">
+                    <CalendarDays size={17} className="text-green-500" />
+                    {formatCalendarMonth(calendarMonth)}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="下一个月"
+                    onClick={() => setCalendarMonth(new Date(Date.UTC(calendarMonth.getUTCFullYear(), calendarMonth.getUTCMonth() + 1, 1)))}
+                    className="p-2 rounded-full text-slate-500 hover:bg-white"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-slate-400 mb-1">
+                  {['日', '一', '二', '三', '四', '五', '六'].map((day) => <span key={day}>{day}</span>)}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarDays.map((day, index) => {
+                    if (!day) return <span key={`empty-${index}`} className="min-h-14" />;
+                    const dateKey = day.toISOString().slice(0, 10);
+                    const summary = sleepSummaryByDay[dateKey];
+                    const isBirthday = dateKey === birthStats.birthDate;
+                    const duration = summary ? formatCompactSleepDuration(summary.durationMinutes) : null;
+                    return (
+                      <div
+                        key={dateKey}
+                        className={`min-h-14 rounded-lg p-1 text-left ${isBirthday ? 'bg-amber-50 border border-amber-300' : summary ? 'bg-white border border-green-200' : 'bg-white/50'}`}
+                        title={summary ? `睡眠 ${summary.count} 次，共约 ${duration}` : undefined}
+                      >
+                        <div className={`text-xs font-bold ${isBirthday ? 'text-amber-700' : summary ? 'text-green-700' : 'text-slate-500'}`}>
+                          {day.getUTCDate()}{isBirthday && ' 🎂'}
+                        </div>
+                        {summary && (
+                          <div className="mt-1 text-[10px] leading-3 text-slate-600">
+                            <div>🌙 {summary.count} 次</div>
+                            <div>约 {duration}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              <div className="rounded-xl bg-slate-50 p-3 text-center text-xs text-slate-400">
+                保存出生信息后，这里会从宝宝出生月份开始显示睡眠日历。
+              </div>
+            )}
+
+            <section className="rounded-3xl border border-green-100 bg-gradient-to-br from-green-50 via-white to-emerald-50 p-5 shadow-sm">
+              <div>
+                <div className="mb-5 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-green-100 text-green-600">
+                    <Moon size={20} />
+                  </div>
+                  <div>
+                    <label htmlFor="sleep-duration" className="block text-sm font-bold text-slate-700">睡眠时长</label>
+                    <p className="mt-0.5 text-xs text-slate-400">拖动滑块，或直接输入时长</p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-4 text-center shadow-sm" aria-live="polite">
+                  <div className="text-xs font-medium text-slate-400">本次睡了</div>
+                  <div className="mt-1 text-2xl font-bold tracking-tight text-green-700">
+                    {formatSleepDuration(sleepDurationMinutes)}
+                  </div>
+                </div>
+                <input
+                  id="sleep-duration"
+                  type="range"
+                  min="15"
+                  max="480"
+                  step="15"
+                  value={sleepDurationMinutes}
+                  aria-valuetext={formatSleepDuration(sleepDurationMinutes)}
+                  onChange={(event) => {
+                    const durationMinutes = Number(event.target.value);
+                    setSleepDurationMinutes(durationMinutes);
+                    syncSleepDurationInputs(durationMinutes);
+                  }}
+                  style={{ '--sleep-progress': `${((sleepDurationMinutes - 15) / (480 - 15)) * 100}%` }}
+                  className="sleep-range mt-6 w-full cursor-pointer appearance-none"
+                />
+                <div className="mt-3 flex justify-between px-1 text-[10px] font-medium text-slate-400" aria-hidden="true">
+                  {['15分', '2小时', '4小时', '6小时', '8小时'].map((label) => (
+                    <span key={label}>{label}</span>
+                  ))}
+                </div>
+                <div className="mt-5 flex items-center justify-center gap-2 text-sm">
+                  <span className="mr-1 text-xs font-medium text-slate-400">自定义</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="8"
+                    step="1"
+                    inputMode="numeric"
+                    value={sleepHoursInput}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSleepHoursInput(value);
+                      updateSleepDurationFromInputs(value, sleepMinutesInput);
+                    }}
+                    onBlur={() => syncSleepDurationInputs(sleepDurationMinutes)}
+                    aria-label="睡眠时长小时"
+                    className="w-16 rounded-xl border border-slate-200 bg-white p-2 text-center text-sm font-semibold text-slate-700 shadow-sm outline-none transition focus:border-green-300 focus:ring-2 focus:ring-green-100"
+                  />
+                  <span className="text-xs text-slate-500">小时</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    step="1"
+                    inputMode="numeric"
+                    value={sleepMinutesInput}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSleepMinutesInput(value);
+                      updateSleepDurationFromInputs(sleepHoursInput, value);
+                    }}
+                    onBlur={() => syncSleepDurationInputs(sleepDurationMinutes)}
+                    aria-label="睡眠时长分钟"
+                    className="w-16 rounded-xl border border-slate-200 bg-white p-2 text-center text-sm font-semibold text-slate-700 shadow-sm outline-none transition focus:border-green-300 focus:ring-2 focus:ring-green-100"
+                  />
+                  <span className="text-xs text-slate-500">分钟</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={addSleepLog}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-green-300 py-3 font-bold text-white shadow-sm transition hover:bg-green-400 active:scale-[0.99]"
+              >
+                <Plus size={18} /> 保存睡眠记录
+              </button>
+            </section>
+          </div>
+        )}
+
         {activeTab === 'history' && (
           <div className="space-y-3">
             <h2 className="text-lg font-bold text-slate-800 mb-2">历史记录 ({logs.length})</h2>
@@ -1323,6 +1569,7 @@ export default function App() {
                       {log.type === 'contraction' && `⚡ 宫缩持续 ${log.duration} 秒${log.interval !== undefined ? `，距上次结束 ${log.interval} 分钟` : ''}`}
                       {log.type === 'feeding' && `🍼 ${log.detail}`}
                       {log.type === 'diaper' && `🪰 ${log.detail}`}
+                      {log.type === 'sleep' && `🌙 ${log.detail || `约睡眠 ${formatSleepDuration(Number(log.durationMinutes) || 0)}`}`}
                       {log.type === 'alert' && `🔔 ${log.detail}`}
                       {log.type === 'birth' && `👶 出生记录：${log.birthDate} ${log.birthTime}，体重 ${log.weight} kg${log.height ? `，身高 ${log.height} cm` : ''}${log.gestationalAge ? `，出生孕周 ${log.gestationalAge.weeks} 周 ${log.gestationalAge.remainingDays} 天` : ''}`}
                     </div>

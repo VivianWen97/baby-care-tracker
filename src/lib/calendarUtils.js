@@ -33,6 +33,24 @@ export function buildDailySummary(logs, type) {
     }, {});
 }
 
+export function buildSleepDailySummary(logs) {
+  return logs
+    .filter((log) => log.type === 'sleep')
+    .reduce((summary, log) => {
+      const dateKey = log.dateKey || (log.timestamp ? getLocalDateKey(new Date(log.timestamp)) : null);
+      const durationMinutes = Number(log.durationMinutes) || 0;
+      if (!dateKey) return summary;
+
+      if (!summary[dateKey]) {
+        summary[dateKey] = { count: 0, durationMinutes: 0 };
+      }
+
+      summary[dateKey].count += 1;
+      summary[dateKey].durationMinutes += durationMinutes;
+      return summary;
+    }, {});
+}
+
 export function buildDiaperIntervalSummary(logs, birthTimestamp, now = Date.now()) {
   const intervalLength = 24 * 60 * 60 * 1000;
   if (!Number.isFinite(birthTimestamp) || birthTimestamp > now) return [];
@@ -61,6 +79,35 @@ export function buildDiaperIntervalSummary(logs, birthTimestamp, now = Date.now(
 
     if (diaperType === 'pee' || diaperType === 'both') intervals[intervalIndex].pee += 1;
     if (diaperType === 'poo' || diaperType === 'both') intervals[intervalIndex].poo += 1;
+  });
+
+  return intervals;
+}
+
+export function buildFeedingIntervalSummary(logs, birthTimestamp, now = Date.now()) {
+  const intervalLength = 24 * 60 * 60 * 1000;
+  if (!Number.isFinite(birthTimestamp) || birthTimestamp > now) return [];
+
+  const intervalCount = Math.floor((now - birthTimestamp) / intervalLength) + 1;
+  const intervals = Array.from({ length: intervalCount }, (_, index) => ({
+    index,
+    count: 0,
+    amount: 0,
+  }));
+
+  logs.forEach((log) => {
+    if (log.type !== 'feeding') return;
+
+    const eventTimestamp = Number.isFinite(log.timestampMs)
+      ? log.timestampMs
+      : Number.isFinite(Number(log.id))
+        ? Number(log.id)
+        : Date.parse(log.timestamp);
+    if (!Number.isFinite(eventTimestamp) || eventTimestamp < birthTimestamp || eventTimestamp > now) return;
+
+    const intervalIndex = Math.floor((eventTimestamp - birthTimestamp) / intervalLength);
+    intervals[intervalIndex].count += 1;
+    intervals[intervalIndex].amount += Number(log.amount) || 0;
   });
 
   return intervals;
