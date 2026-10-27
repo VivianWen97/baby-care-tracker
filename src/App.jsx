@@ -881,18 +881,18 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
+                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="min-w-0">
                     <label htmlFor="birth-date" className="text-xs text-slate-500 mb-1 block">出生日期</label>
                     <input
                       id="birth-date"
                       type="date"
                       value={birthStats.birthDate}
                       onChange={(e) => setBirthStats({ ...birthStats, birthDate: e.target.value })}
-                      className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                      className="block w-full min-w-0 max-w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
                     />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label htmlFor="birth-time" className="text-xs text-slate-500 mb-1 block">出生时间</label>
                     <input
                       id="birth-time"
@@ -900,7 +900,7 @@ export default function App() {
                       step="1"
                       value={birthStats.birthTime}
                       onChange={(e) => setBirthStats({ ...birthStats, birthTime: e.target.value })}
-                      className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
+                      className="block w-full min-w-0 max-w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-green-300 text-sm"
                     />
                   </div>
                 </div>
